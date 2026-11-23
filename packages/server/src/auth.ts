@@ -77,3 +77,37 @@ export async function supabasePasswordLogin(email: string, password: string): Pr
   if (!rows.length) throw new ForbiddenError('This account has no access yet. Ask the admin.');
   return createSessionToken(userId);
 }
+
+/** Password reset works only with Supabase email sign-in (not with the development demo accounts). */
+export function passwordResetAvailable() {
+  const c = config();
+  return c.authMode === 'supabase' && !!c.supabase;
+}
+
+/**
+ * Send a password-reset email. The same answer is given whether or not the email has an account,
+ * so the form cannot be used to find out who is a customer. The link opens /reset-password.
+ */
+export async function requestPasswordReset(email: string): Promise<void> {
+  if (!passwordResetAvailable()) throw new AuthError('Password reset is not set up on this server yet');
+  const { supabasePublic } = await import('./adapters/supabase');
+  const { error } = await supabasePublic().auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+    redirectTo: `${config().publicBaseUrl}/reset-password`,
+  });
+  if (error && (error.status === 429 || /rate limit/i.test(error.message))) {
+    throw new AuthError('Too many reset requests. Wait a few minutes and try again.');
+  }
+  if (error) console.warn('[auth] password reset email failed:', error.message);
+}
+
+/** Set a new password using the one-time access token from the reset email link. */
+export async function completePasswordReset(accessToken: string, newPassword: string): Promise<void> {
+  if (!passwordResetAvailable()) throw new AuthError('Password reset is not set up on this server yet');
+  if (newPassword.length < 8) throw new AuthError('Use at least 8 characters.');
+  const { supabaseAdmin } = await import('./adapters/supabase');
+  const admin = supabaseAdmin();
+  const { data, error } = await admin.auth.getUser(accessToken);
+  if (error || !data.user) throw new AuthError('This reset link has expired. Ask for a new one.');
+  const res = await admin.auth.admin.updateUserById(data.user.id, { password: newPassword });
+  if (res.error) throw new AuthError(`Could not save the new password: ${res.error.message}`);
+}
