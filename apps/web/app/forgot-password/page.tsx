@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { passwordResetAvailable } from '@snow/server';
 import { AuthShell, GlassNotice } from '@/components/auth-shell';
 import { glassInput, glassLabel, glassLink } from '@/components/glass';
+import { COMING_SOON } from '@/lib/features';
 import { forgotPasswordAction } from '../login/actions';
 import { SubmitButton } from '../login/submit-button';
 
@@ -15,6 +16,22 @@ export default async function ForgotPasswordPage({ searchParams }: { searchParam
       ← Back to sign in
     </Link>
   );
+
+  if (COMING_SOON.passwordReset) {
+    return (
+      <AuthShell
+        title="Password reset (coming soon)"
+        subtitle="You will soon be able to reset your password here. For now, ask the admin to reset it for you."
+        footer={
+          <Link href="/login" className={glassLink}>
+            ← Back to sign in
+          </Link>
+        }
+      >
+        <p className="text-sm text-white/75">This feature is not available yet.</p>
+      </AuthShell>
+    );
+  }
 
   if (sent) {
     return (

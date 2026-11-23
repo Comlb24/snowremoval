@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { devLogin, supabasePasswordLogin, verifySession, config, requestPasswordReset, completePasswordReset } from '@snow/server';
 import { SESSION_COOKIE, homeFor } from '@/lib/session';
+import { COMING_SOON } from '@/lib/features';
 
 async function setSession(token: string) {
   (await cookies()).set(SESSION_COOKIE, token, {
@@ -43,6 +44,7 @@ export async function logoutAction() {
 }
 
 export async function forgotPasswordAction(form: FormData) {
+  if (COMING_SOON.passwordReset) redirect('/forgot-password');
   try {
     await requestPasswordReset(String(form.get('email') ?? ''));
   } catch (e: any) {
@@ -54,6 +56,7 @@ export async function forgotPasswordAction(form: FormData) {
 export type ResetState = { ok: boolean; error?: string };
 
 export async function resetPasswordAction(_prev: ResetState, form: FormData): Promise<ResetState> {
+  if (COMING_SOON.passwordReset) return { ok: false, error: 'Password reset is coming soon.' };
   const password = String(form.get('password') ?? '');
   if (password !== String(form.get('confirm') ?? '')) return { ok: false, error: 'The two passwords do not match.' };
   try {

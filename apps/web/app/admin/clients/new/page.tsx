@@ -1,3 +1,4 @@
+import { COMING_SOON } from '@/lib/features';
 import { config } from '@snow/server';
 import { requirePageRole } from '@/lib/session';
 import { btn, Card, Field, input, Notice, PageHeader } from '@/components/ui';
@@ -20,7 +21,7 @@ export default async function NewClientPage({ searchParams }: { searchParams: Pr
             <fieldset>
               <legend className="mb-1 text-sm font-medium text-slate-700">Send service updates by</legend>
               <label className="mr-4 inline-flex items-center gap-2 text-sm"><input type="radio" name="notifyChannel" value="sms" defaultChecked /> SMS (default)</label>
-              <label className="inline-flex items-center gap-2 text-sm"><input type="radio" name="notifyChannel" value="voice" /> Automated voice call</label>
+              <label className={`inline-flex items-center gap-2 text-sm ${COMING_SOON.voiceCalls ? 'text-slate-400' : ''}`}><input type="radio" name="notifyChannel" value="voice" disabled={COMING_SOON.voiceCalls} /> Automated voice call{COMING_SOON.voiceCalls && ' (coming soon)'}</label>
             </fieldset>
           </div>
         </Card>

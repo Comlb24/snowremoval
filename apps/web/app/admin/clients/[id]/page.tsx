@@ -1,3 +1,4 @@
+import { COMING_SOON } from '@/lib/features';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { cookies } from 'next/headers';
@@ -46,7 +47,13 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
             <fieldset>
               <legend className="mb-1 text-sm font-medium text-slate-700">Send service updates by</legend>
               <label className="mr-4 inline-flex items-center gap-2 text-sm"><input type="radio" name="notifyChannel" value="sms" defaultChecked={client.notify_channel === 'sms'} /> SMS</label>
-              <label className="inline-flex items-center gap-2 text-sm"><input type="radio" name="notifyChannel" value="voice" defaultChecked={client.notify_channel === 'voice'} /> Automated voice call</label>
+              {/* A client already set to voice keeps the option, so saving the form never drops their choice. */}
+              {(() => {
+                const off = COMING_SOON.voiceCalls && client.notify_channel !== 'voice';
+                return (
+                  <label className={`inline-flex items-center gap-2 text-sm ${off ? 'text-slate-400' : ''}`}><input type="radio" name="notifyChannel" value="voice" defaultChecked={client.notify_channel === 'voice'} disabled={off} /> Automated voice call{COMING_SOON.voiceCalls && ' (coming soon)'}</label>
+                );
+              })()}
             </fieldset>
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" name="optedOut" defaultChecked={client.opted_out} /> Opted out of all notifications

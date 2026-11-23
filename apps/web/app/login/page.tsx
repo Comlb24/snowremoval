@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { devLoginEnabled, listDevUsers } from '@snow/server';
 import { AuthShell, GlassNotice } from '@/components/auth-shell';
 import { glassInput, glassLabel, glassLink } from '@/components/glass';
+import { COMING_SOON } from '@/lib/features';
 import { devLoginAction, passwordLoginAction } from './actions';
 import { SubmitButton } from './submit-button';
 
@@ -26,9 +27,15 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         <label className="block">
           <span className="mb-1.5 flex items-baseline justify-between">
             <span className="text-sm font-medium text-white/85">Password</span>
-            <Link href="/forgot-password" className={`text-sm ${glassLink}`}>
-              Forgot password?
-            </Link>
+            {COMING_SOON.passwordReset ? (
+              <span className="text-sm text-white/55" aria-disabled="true">
+                Forgot password? (coming soon)
+              </span>
+            ) : (
+              <Link href="/forgot-password" className={`text-sm ${glassLink}`}>
+                Forgot password?
+              </Link>
+            )}
           </span>
           <input name="password" type="password" required placeholder="••••••••" className={glassInput} autoComplete="current-password" />
         </label>
