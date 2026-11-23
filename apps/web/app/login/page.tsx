@@ -1,6 +1,7 @@
 import { config, devLoginEnabled, listDevUsers } from '@snow/server';
 import { btn, Card, input, Notice } from '@/components/ui';
 import { devLoginAction, passwordLoginAction } from './actions';
+import { SubmitButton } from './submit-button';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,7 +38,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           <form action={passwordLoginAction} className="space-y-3">
             <input name="email" type="email" required placeholder="Email" className={input} autoComplete="email" />
             <input name="password" type="password" required placeholder="Password" className={input} autoComplete="current-password" />
-            <button className={`${btn()} w-full`}>Sign in</button>
+            <SubmitButton label="Sign in" pendingLabel="Signing in…" />
           </form>
         </Card>
       )}
