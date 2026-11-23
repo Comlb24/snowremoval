@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   computeSchedule, windowFor, zonedToUtc, formatTime, formatWindow, planNotifications, suggestOrder, pathCost,
-  smsMessage, voiceMessage, normalizePhone, redactPhone, redactText, previewImport,
+  smsMessage, voiceMessage, emailMessage, clientInputSchema, normalizePhone, redactPhone, redactText, previewImport,
   type ExistingNotification, type PlannerStop, type ScheduleStopInput,
 } from './index';
 
@@ -274,5 +274,24 @@ describe('CSV import preview', () => {
   });
   it('reports missing columns', () => {
     expect(previewImport('name,address\nx,y').headerErrors.length).toBeGreaterThan(0);
+  });
+});
+
+describe('email updates', () => {
+  const input = { name: 'Jane Doe', address: '12 Main St', window: { start: '2026-01-15T13:00:00Z', end: '2026-01-15T15:00:00Z' }, businessName: 'Demo Snow Co.', timeZone: 'America/Moncton' };
+  it('has a clear subject and a signed plain-text body', () => {
+    const m = emailMessage(input);
+    expect(m.subject).toBe('Snow removal at 12 Main St today, 9:00 a.m. to 11:00 a.m.');
+    expect(m.body).toContain('Hi Jane,');
+    expect(m.body).toContain('Please move vehicles from the driveway before 9:00 a.m.');
+    expect(m.body.endsWith('Demo Snow Co.')).toBe(true);
+    expect(emailMessage(input, true).subject.startsWith('Updated time: ')).toBe(true);
+  });
+  it('email needs an email address, in the form and in CSV import', () => {
+    expect(clientInputSchema.safeParse({ name: 'A', phone: '506-555-0123', notifyChannel: 'email' }).success).toBe(false);
+    expect(clientInputSchema.safeParse({ name: 'A', phone: '506-555-0123', email: 'a@example.com', notifyChannel: 'email' }).success).toBe(true);
+    const p = previewImport('client_name,phone,address,notify_method,email\nA,506-555-0123,1 Main St,email,\nB,506-555-0124,2 Main St,email,b@example.com\n');
+    expect(p.rows[0].errors.join()).toMatch(/Email is needed/);
+    expect(p.rows[1]).toMatchObject({ errors: [], notifyChannel: 'email' });
   });
 });

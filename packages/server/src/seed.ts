@@ -13,7 +13,7 @@ export const DEMO = {
   clientUser: '00000000-0000-4000-a000-000000000004',
 };
 
-const CLIENTS: { name: string; phone: string; channel: 'sms' | 'voice'; email?: string; properties: { address: string; lat: number; lng: number; instructions: string; minutes: number }[] }[] = [
+const CLIENTS: { name: string; phone: string; channel: 'sms' | 'voice' | 'email'; email?: string; properties: { address: string; lat: number; lng: number; instructions: string; minutes: number }[] }[] = [
   { name: 'Jane Doe', phone: '506-555-0101', channel: 'sms', email: 'jane@example.com', properties: [
     { address: '12 Maple Ave, Moncton, NB', lat: 46.0942, lng: -64.7905, instructions: 'Clear to the garage door. Mind the flower bed on the left.', minutes: 15 },
     { address: '48 Birch Lane, Dieppe, NB', lat: 46.0989, lng: -64.7243, instructions: 'Rental unit. Shovel the side path too.', minutes: 20 },
@@ -30,7 +30,7 @@ const CLIENTS: { name: string; phone: string; channel: 'sms' | 'voice'; email?: 
   { name: 'Chloé Cormier', phone: '506-555-0105', channel: 'sms', properties: [
     { address: '15 Acadie Ave, Dieppe, NB', lat: 46.0923, lng: -64.7351, instructions: 'Corner lot. Also clear the sidewalk ramp.', minutes: 20 },
   ] },
-  { name: 'Grace Wong', phone: '506-555-0106', channel: 'sms', properties: [
+  { name: 'Grace Wong', phone: '506-555-0106', channel: 'email', email: 'grace@example.com', properties: [
     { address: '303 St George Blvd, Moncton, NB', lat: 46.0889, lng: -64.7987, instructions: 'Back lane access only.', minutes: 15 },
   ] },
   // This number ends in 0000: the simulated messenger fails it, to show failed delivery in the admin.
@@ -69,6 +69,11 @@ export async function seedDemoData(now = new Date()) {
     }
   }
   await asSystem((tx) => tx.query('update clients set user_id = $1 where id = $2', [DEMO.clientUser, janeId]));
+  // Demo equipment and quotes: longer jobs get a plow, short ones a blower, walkways both. Made-up prices.
+  await asSystem(async (tx) => {
+    await tx.query(`update properties set equipment = case when service_minutes >= 20 then array['snowplow', 'snowblower'] when service_minutes >= 15 then array['snowplow'] else array['snowblower'] end`);
+    await tx.query(`insert into property_admin_details (property_id, quoted_amount) select id, 300 + service_minutes * 20 from properties on conflict (property_id) do update set quoted_amount = excluded.quoted_amount`);
+  });
   const all = await asSystem((tx) => tx.query<{ id: string; address: string }>('select id, address from properties order by address'));
   propertyIds.push(...all.map((p) => p.id));
 

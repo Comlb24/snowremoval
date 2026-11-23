@@ -1,4 +1,4 @@
-import { BLOCK_REASONS, formatPhone } from '@snow/core';
+import { BLOCK_REASONS, equipmentText, formatPhone } from '@snow/core';
 import * as ImagePicker from 'expo-image-picker';
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
@@ -102,7 +102,9 @@ export default function StopScreen() {
       </Card>
 
       <Card>
-        <Text style={{ fontSize: 15, fontWeight: '700', color: colors.muted, marginBottom: 6 }}>DRIVEWAY INSTRUCTIONS</Text>
+        <Text style={{ fontSize: 15, fontWeight: '700', color: colors.muted, marginBottom: 6 }}>RECOMMENDED EQUIPMENT</Text>
+        <Text style={{ fontSize: 19, lineHeight: 26, marginBottom: 14 }}>{stop.equipment?.length ? equipmentText(stop.equipment) : 'Not specified.'}</Text>
+        <Text style={{ fontSize: 15, fontWeight: '700', color: colors.muted, marginBottom: 6 }}>DRIVER NOTES</Text>
         <Text style={{ fontSize: 19, lineHeight: 26 }}>{stop.instructions || 'No special instructions.'}</Text>
       </Card>
 

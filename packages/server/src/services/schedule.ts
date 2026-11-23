@@ -1,5 +1,5 @@
 import {
-  computeSchedule, planNotifications, smsMessage, voiceMessage,
+  computeSchedule, emailMessage, planNotifications, smsMessage, voiceMessage,
   type Channel, type ExistingNotification, type PlannedNotification, type RouteStatus, type StopEstimate, type StopStatus,
 } from '@snow/core';
 import { iso, type Tx } from '../db';
@@ -23,7 +23,14 @@ export interface StopRow {
   notify_channel: Channel;
   opted_out: boolean;
   phone: string | null;
+  email: string | null;
+  /** Who the message is for: the resident when the property has one, otherwise the owner. */
+  recipient_name: string;
+  to_resident: boolean;
 }
+
+/** Where this client's updates go: their email for the email channel, otherwise their phone. */
+export const contactFor = (s: { notify_channel: Channel; phone: string | null; email: string | null }) => (s.notify_channel === 'email' ? s.email : s.phone);
 
 export interface RouteRow {
   id: string;
@@ -35,6 +42,16 @@ export interface RouteRow {
   shift_started_at: Date | null;
 }
 
+/**
+ * Who gets a property's service updates. A resident, when set, replaces the owner's channel and contact.
+ * Needs the joins: clients c, client_contacts cc, property_residents pr.
+ */
+export const RECIPIENT_COLUMNS = `(pr.property_id is not null) as to_resident,
+            case when pr.property_id is not null then pr.notify_channel else c.notify_channel end as notify_channel,
+            case when pr.property_id is not null then pr.phone else cc.phone end as phone,
+            case when pr.property_id is not null then pr.email else cc.email end as email,
+            case when pr.property_id is not null then coalesce(nullif(pr.name, ''), 'there') else c.name end as recipient_name`;
+
 export async function loadRouteForSchedule(tx: Tx, routeId: string, lock = false) {
   const [route] = await tx.query<RouteRow>(
     `select r.id, r.status, r.planned_start, r.service_date::text as service_date, r.driver_id, r.travel_matrix, sh.started_at as shift_started_at
@@ -44,11 +61,13 @@ export async function loadRouteForSchedule(tx: Tx, routeId: string, lock = false
   if (!route) return null;
   const stops = await tx.query<StopRow>(
     `select s.id, s.route_id, s.property_id, s.position, s.drive_minutes, s.service_minutes, s.status, s.started_at, s.finished_at,
-            p.address, p.active as property_active, c.id as client_id, c.name as client_name, c.notify_channel, c.opted_out, cc.phone
+            p.address, p.active as property_active, c.id as client_id, c.name as client_name, c.opted_out,
+            ${RECIPIENT_COLUMNS}
        from route_stops s
        join properties p on p.id = s.property_id
        join clients c on c.id = p.client_id
        left join client_contacts cc on cc.client_id = c.id
+       left join property_residents pr on pr.property_id = p.id
       where s.route_id = $1 order by s.position`,
     [routeId],
   );
@@ -73,13 +92,14 @@ export function estimatesFor(route: RouteRow, stops: StopRow[], now: Date): Stop
 
 async function loadExisting(tx: Tx, routeId: string): Promise<ExistingNotification[]> {
   const rows = await tx.query(
-    `select id, route_stop_id, kind, status, window_start, window_end, scheduled_at, sent_at
+    `select id, route_stop_id, kind, status, window_start, window_end, scheduled_at, sent_at, channel, to_address
        from notifications where route_id = $1 and kind <> 'manual'`,
     [routeId],
   );
   return rows.map((n: any) => ({
     id: n.id, stopId: n.route_stop_id, kind: n.kind, status: n.status,
     windowStart: iso(n.window_start), windowEnd: iso(n.window_end), scheduledAt: iso(n.scheduled_at)!, sentAt: iso(n.sent_at),
+    channel: n.channel, to: n.to_address,
   }));
 }
 
@@ -88,16 +108,20 @@ function plannerStops(stops: StopRow[], est: StopEstimate[]) {
     stopId: s.id,
     status: s.status,
     estimate: est[i],
-    eligible: !s.opted_out && s.property_active && !!s.phone,
+    eligible: !s.opted_out && s.property_active && !!contactFor(s),
     channel: s.notify_channel,
+    to: contactFor(s),
   }));
 }
 
-export function renderBody(kind: 'initial' | 'update', channel: Channel, stop: Pick<StopRow, 'client_name' | 'address'>, window: { start: string; end: string }) {
+export function renderMessage(kind: 'initial' | 'update', channel: Channel, stop: Pick<StopRow, 'recipient_name' | 'address'>, window: { start: string; end: string }): { body: string; subject: string | null } {
   const c = config();
-  const input = { name: stop.client_name, address: stop.address, window, businessName: c.businessName, timeZone: c.timeZone };
-  return channel === 'voice' ? voiceMessage(input, kind === 'update') : smsMessage(input, kind === 'update');
+  const input = { name: stop.recipient_name, address: stop.address, window, businessName: c.businessName, timeZone: c.timeZone };
+  if (channel === 'email') return emailMessage(input, kind === 'update');
+  return { body: channel === 'voice' ? voiceMessage(input, kind === 'update') : smsMessage(input, kind === 'update'), subject: null };
 }
+
+export const renderBody = (...a: Parameters<typeof renderMessage>) => renderMessage(...a).body;
 
 /**
  * Recalculate a route's estimates and bring its scheduled notifications up to date.
@@ -114,17 +138,18 @@ export async function recomputeRoute(tx: Tx, routeId: string, now = new Date()) 
   for (const c of plan.cancel) {
     await tx.query(`update notifications set status = 'cancelled', cancel_reason = $2, updated_at = now() where id = $1 and status = 'scheduled'`, [c.id, c.reason]);
   }
-  const messenger = getMessenger();
   let created = 0;
   for (const p of plan.create) {
     const stop = stops.find((s) => s.id === p.stopId)!;
+    const messenger = getMessenger(p.channel);
+    const msg = renderMessage(p.kind, p.channel, stop, p.window);
     const rows = await tx.query(
-      `insert into notifications (client_id, property_id, route_id, route_stop_id, kind, channel, to_address, body, window_start, window_end,
+      `insert into notifications (client_id, property_id, route_id, route_stop_id, kind, channel, to_address, body, subject, window_start, window_end,
                                   scheduled_at, status, simulated, provider, dedupe_key)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'scheduled', $12, $13, $14)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'scheduled', $13, $14, $15)
        on conflict (dedupe_key) where dedupe_key is not null and status <> 'cancelled' do nothing
        returning id`,
-      [stop.client_id, stop.property_id, routeId, stop.id, p.kind, p.channel, stop.phone, renderBody(p.kind, p.channel, stop, p.window),
+      [stop.client_id, stop.property_id, routeId, stop.id, p.kind, p.channel, contactFor(stop), msg.body, msg.subject,
        p.window.start, p.window.end, p.scheduledAt.toISOString(), messenger.simulated, messenger.name, p.dedupeKey],
     );
     created += rows.length;
@@ -161,7 +186,8 @@ export async function previewNotifications(tx: Tx, routeId: string, now = new Da
     address: s.address,
     clientName: s.client_name,
     channel: s.notify_channel,
-    eligible: !s.opted_out && s.property_active && !!s.phone,
+    toResident: s.to_resident,
+    eligible: !s.opted_out && s.property_active && !!contactFor(s),
     optedOut: s.opted_out,
     status: s.status,
     arrival: est[i].arrival?.toISOString() ?? null,

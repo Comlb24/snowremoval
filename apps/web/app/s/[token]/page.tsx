@@ -19,7 +19,7 @@ export default async function PublicStatusPage({ params }: { params: Promise<{ t
         </div>
       ) : (
         <>
-          <h1 className="mb-4 text-xl font-semibold">Hi {s.firstName}</h1>
+          <h1 className="mb-4 text-xl font-semibold">Hi {s.firstName || 'there'}</h1>
           <StatusView address={s.address} stop={s.stop} active={s.active} />
           <p className="mt-6 text-center text-xs text-slate-500">This page updates every minute. Keep this link private.</p>
         </>

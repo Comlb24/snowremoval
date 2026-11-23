@@ -19,6 +19,8 @@ export interface DriverStop {
   lat: number;
   lng: number;
   instructions: string;
+  /** Recommended equipment. Missing in routes cached by older app versions. */
+  equipment?: ('snowplow' | 'snowblower')[];
   client_name: string;
   note: string | null;
   block_reason: string | null;

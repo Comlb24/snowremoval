@@ -7,6 +7,7 @@ import { DEFAULT_TIME_ZONE } from '@snow/core';
  *
  * Safety rule: real SMS/calls are possible only when APP_ENV=production AND MESSAGING_MODE=live
  * AND every Twilio secret is present. Anything else uses the simulated messenger.
+ * Real email follows the same rule, with RESEND_API_KEY and EMAIL_FROM instead of the Twilio values.
  */
 export interface ServerConfig {
   appEnv: 'development' | 'production' | 'test';
@@ -19,6 +20,8 @@ export interface ServerConfig {
   pgliteDir: string | null;
   authMode: 'dev' | 'supabase';
   messagingMode: 'simulated' | 'live';
+  emailMode: 'simulated' | 'live';
+  email: { apiKey: string; from: string; replyTo: string | null } | null;
   routingMode: 'mock' | 'mapbox';
   storageMode: 'local' | 'supabase';
   localStorageDir: string;
@@ -62,6 +65,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     pgliteDir: env.DATABASE_URL ? null : (env.PGLITE_DIR ?? path.join(root, '.data', 'pglite')),
     authMode: env.AUTH_MODE === 'supabase' ? 'supabase' : 'dev',
     messagingMode: appEnv === 'production' && wantsLive && twilio ? 'live' : 'simulated',
+    emailMode: appEnv === 'production' && wantsLive && env.RESEND_API_KEY && env.EMAIL_FROM ? 'live' : 'simulated',
+    email: env.RESEND_API_KEY && env.EMAIL_FROM ? { apiKey: env.RESEND_API_KEY, from: env.EMAIL_FROM, replyTo: env.EMAIL_REPLY_TO || null } : null,
     routingMode: env.ROUTING_MODE === 'mapbox' && env.MAPBOX_TOKEN ? 'mapbox' : 'mock',
     storageMode: env.STORAGE_MODE === 'supabase' ? 'supabase' : 'local',
     localStorageDir: env.LOCAL_STORAGE_DIR ?? path.join(root, '.data', 'photos'),

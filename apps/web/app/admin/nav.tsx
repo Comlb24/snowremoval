@@ -4,10 +4,12 @@ import { usePathname } from 'next/navigation';
 
 const ITEMS = [
   { href: '/admin', label: 'Overview' },
-  { href: '/admin/clients', label: 'Clients & Properties' },
+  { href: '/admin/clients', label: 'Clients' },
+  { href: '/admin/properties', label: 'Properties' },
   { href: '/admin/routes', label: 'Routes' },
   { href: '/admin/drivers', label: 'Drivers' },
   { href: '/admin/communications', label: 'Communications' },
+  { href: '/admin/team', label: 'Team Members' },
 ];
 
 export function AdminNav() {

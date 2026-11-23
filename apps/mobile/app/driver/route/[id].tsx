@@ -1,3 +1,4 @@
+import { equipmentText } from '@snow/core';
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
@@ -78,6 +79,7 @@ export default function RouteScreen() {
             <Text style={{ fontSize: 14, fontWeight: '700', color: colors.primary }}>{current.status === 'in_progress' ? 'CURRENT STOP' : 'NEXT STOP'} · #{stops.indexOf(current) + 1}</Text>
             <Text style={{ fontSize: 24, fontWeight: '800', marginTop: 4 }}>{current.address}</Text>
             <Text style={{ fontSize: 16, color: colors.muted, marginTop: 4 }}>{current.client_name} · est. {time(current.est_arrival)}</Text>
+            {current.equipment?.length ? <Text style={{ fontSize: 16, fontWeight: '700', marginTop: 8 }}>🚜 {equipmentText(current.equipment)}</Text> : null}
             {current.instructions ? <Text style={{ fontSize: 16, marginTop: 8 }} numberOfLines={2}>📝 {current.instructions}</Text> : null}
             <Text style={{ fontSize: 17, fontWeight: '700', color: colors.primary, marginTop: 10 }}>Open stop ›</Text>
           </Card>

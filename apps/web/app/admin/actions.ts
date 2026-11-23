@@ -18,21 +18,16 @@ async function locate(user: S.SessionUser, address: string, lat: string, lng: st
   return { lat: g.lat, lng: g.lng, source: g.source };
 }
 
-// ---------------------------------------------------------------- clients & properties
+// ---------------------------------------------------------------- clients
 export async function createClientAction(f: FormData) {
   const user = await requirePageRole('admin');
   let id = '';
   try {
-    const loc = await locate(user, str(f, 'address'), str(f, 'lat'), str(f, 'lng'));
-    id = await S.createClient(
-      user,
-      { name: str(f, 'name'), phone: str(f, 'phone'), email: str(f, 'email'), notifyChannel: str(f, 'notifyChannel') || 'sms', optedOut: false },
-      { address: str(f, 'address'), lat: loc.lat, lng: loc.lng, instructions: str(f, 'instructions'), serviceMinutes: Number(str(f, 'serviceMinutes') || 15), active: true, source: loc.source },
-    );
+    id = await S.createClient(user, { name: str(f, 'name'), phone: str(f, 'phone'), email: str(f, 'email'), notifyChannel: str(f, 'notifyChannel') || 'sms', optedOut: false });
   } catch (e) {
     back('/admin/clients/new', e);
   }
-  redirect(`/admin/clients/${id}?msg=Client+added`);
+  redirect(`/admin/properties/new?clientId=${id}`);
 }
 
 export async function updateClientAction(f: FormData) {
@@ -47,51 +42,84 @@ export async function updateClientAction(f: FormData) {
   redirect(`/admin/clients/${id}?msg=Saved`);
 }
 
-export async function savePropertyAction(f: FormData) {
+export async function recordPaymentAction(f: FormData) {
   const user = await requirePageRole('admin');
   const clientId = str(f, 'clientId');
-  const propertyId = str(f, 'propertyId');
   try {
-    const loc = await locate(user, str(f, 'address'), str(f, 'lat'), str(f, 'lng'));
-    // Unchanged coordinates keep their original source label (e.g. "simulated").
-    const unchanged = propertyId && str(f, 'lat') === str(f, 'origLat') && str(f, 'lng') === str(f, 'origLng');
-    const source = unchanged ? undefined : loc.source;
-    const data = { clientId, address: str(f, 'address'), lat: loc.lat, lng: loc.lng, instructions: str(f, 'instructions'), serviceMinutes: Number(str(f, 'serviceMinutes') || 15), active: f.get('active') !== 'off' };
-    if (propertyId) await S.updateProperty(user, propertyId, data, source);
-    else await S.createProperty(user, data, loc.source);
+    await S.recordPayment(user, { clientId, amount: str(f, 'amount'), paidOn: str(f, 'paidOn'), note: str(f, 'note') });
   } catch (e) {
     back(`/admin/clients/${clientId}`, e);
   }
-  redirect(`/admin/clients/${clientId}?msg=Property+saved`);
+  redirect(`/admin/clients/${clientId}?msg=Payment+recorded`);
+}
+
+export async function deletePaymentAction(f: FormData) {
+  const user = await requirePageRole('admin');
+  const clientId = str(f, 'clientId');
+  await S.deletePayment(user, str(f, 'paymentId'));
+  redirect(`/admin/clients/${clientId}?msg=Payment+removed`);
+}
+
+// ---------------------------------------------------------------- properties
+/** Where to go after a property form: back to the client page when it was opened from there. */
+const propertyReturn = (f: FormData, propertyId: string) =>
+  str(f, 'returnTo') === 'client' ? `/admin/clients/${str(f, 'clientId')}` : `/admin/properties/${propertyId}`;
+
+export async function savePropertyAction(f: FormData) {
+  const user = await requirePageRole('admin');
+  let propertyId = str(f, 'propertyId');
+  const formPath = propertyId ? `/admin/properties/${propertyId}` : `/admin/properties/new?clientId=${encodeURIComponent(str(f, 'clientId'))}`;
+  try {
+    if (!str(f, 'clientId')) throw new Error('Pick the property owner');
+    // Unchanged coordinates keep their original source label (e.g. "simulated").
+    let unchanged = !!propertyId && str(f, 'lat') === str(f, 'origLat') && str(f, 'lng') === str(f, 'origLng');
+    // A new address with the old coordinates would put the stop in the wrong place: look it up again.
+    const moved = unchanged && str(f, 'address').toLowerCase() !== str(f, 'origAddress').toLowerCase();
+    if (moved) unchanged = false;
+    const loc = await locate(user, str(f, 'address'), moved ? '' : str(f, 'lat'), moved ? '' : str(f, 'lng'));
+    const data = {
+      clientId: str(f, 'clientId'), address: str(f, 'address'), lat: loc.lat, lng: loc.lng,
+      instructions: str(f, 'instructions'), serviceMinutes: Number(str(f, 'serviceMinutes') || 15), active: f.get('active') !== 'off',
+      equipment: f.getAll('equipment').map(String), quotedAmount: str(f, 'quotedAmount'), officeNotes: str(f, 'officeNotes'),
+      // All resident fields empty: no resident, updates go to the owner.
+      resident: str(f, 'residentName') || str(f, 'residentPhone') || str(f, 'residentEmail')
+        ? { name: str(f, 'residentName'), phone: str(f, 'residentPhone'), email: str(f, 'residentEmail'), notifyChannel: str(f, 'residentChannel') || 'sms' }
+        : null,
+    };
+    if (propertyId) await S.updateProperty(user, propertyId, data, unchanged ? undefined : loc.source);
+    else propertyId = await S.createProperty(user, data, loc.source);
+  } catch (e) {
+    back(formPath, e);
+  }
+  revalidatePath('/admin/properties');
+  redirect(`${propertyReturn(f, propertyId)}?msg=Property+saved`);
 }
 
 export async function setPropertyActiveAction(f: FormData) {
   const user = await requirePageRole('admin');
-  const clientId = str(f, 'clientId');
+  const propertyId = str(f, 'propertyId');
   try {
-    const detail = await S.getClient(user, clientId);
-    const p = detail!.properties.find((x: any) => x.id === str(f, 'propertyId'))!;
-    await S.updateProperty(user, p.id, { clientId, address: p.address, lat: p.lat, lng: p.lng, instructions: p.instructions, serviceMinutes: p.service_minutes, active: str(f, 'active') === 'true' });
+    await S.setPropertyActive(user, propertyId, str(f, 'active') === 'true');
   } catch (e) {
-    back(`/admin/clients/${clientId}`, e);
+    back(`/admin/properties/${propertyId}`, e);
   }
-  redirect(`/admin/clients/${clientId}?msg=Saved`);
+  redirect(`/admin/properties/${propertyId}?msg=Saved`);
 }
 
 export async function createStatusLinkAction(f: FormData) {
   const user = await requirePageRole('admin');
-  const clientId = str(f, 'clientId');
-  const { url } = await S.createStatusLink(user, str(f, 'propertyId'));
+  const propertyId = str(f, 'propertyId');
+  const { url } = await S.createStatusLink(user, propertyId);
   // Only a hash is stored. The full link is handed to the next page in a short-lived private cookie
   // (never in the URL, so it does not end up in browser history or server logs).
   (await cookies()).set('snow_flash_link', url, { httpOnly: true, sameSite: 'strict', path: '/admin', maxAge: 120 });
-  redirect(`/admin/clients/${clientId}?msg=Status+link+created`);
+  redirect(`/admin/properties/${propertyId}?msg=Status+link+created`);
 }
 
 export async function revokeStatusLinkAction(f: FormData) {
   const user = await requirePageRole('admin');
   await S.revokeStatusLinks(user, str(f, 'propertyId'));
-  redirect(`/admin/clients/${str(f, 'clientId')}?msg=Status+link+revoked`);
+  redirect(`/admin/properties/${str(f, 'propertyId')}?msg=Status+link+revoked`);
 }
 
 export async function previewCsvAction(text: string) {
@@ -104,6 +132,7 @@ export async function importCsvAction(text: string) {
   try {
     const r = await S.importCsv(user, text);
     revalidatePath('/admin/clients');
+    revalidatePath('/admin/properties');
     return { ok: true as const, ...r };
   } catch (e) {
     return { ok: false as const, error: msg(e) };
@@ -191,4 +220,26 @@ export async function runSchedulerAction() {
   await requirePageRole('admin');
   const r = await S.runSchedulerTick();
   redirect(`/admin/communications?msg=${encodeURIComponent(`Scheduler ran: ${r.sent} sent, ${r.failed} failed, ${r.cancelled} cancelled`)}`);
+}
+
+// ---------------------------------------------------------------- team
+export async function createAdminAction(f: FormData) {
+  const user = await requirePageRole('admin');
+  try {
+    await S.createAdmin(user, { fullName: str(f, 'fullName'), email: str(f, 'email'), password: str(f, 'password') || undefined });
+  } catch (e) {
+    back('/admin/team', e);
+  }
+  redirect('/admin/team?msg=Admin+added');
+}
+
+export async function setAdminActiveAction(f: FormData) {
+  const user = await requirePageRole('admin');
+  const active = str(f, 'active') === 'true';
+  try {
+    await S.setAdminActive(user, str(f, 'adminId'), active);
+  } catch (e) {
+    back('/admin/team', e);
+  }
+  redirect(`/admin/team?msg=${active ? 'Access+restored' : 'Access+removed'}`);
 }

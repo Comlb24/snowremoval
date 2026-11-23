@@ -7,6 +7,8 @@ import {
   createDraftRoute, setRouteStatus, reorderStops, getRouteDetail, moveStop,
   myRoutes, driverRoute, revealPhone, recordStopUpdate, addPhoto, startShift, getPhoto,
   runSchedulerTick, sendManualMessage, getMessenger, twilioMessenger, updateClient, createClientLogin,
+  createAdmin, listAdmins, setAdminActive, verifySession, createSessionToken,
+  resendMessenger, updateProperty, getProperty, listProperties, recordPayment, deletePayment, setPropertyActive, createProperty,
   type SessionUser,
 } from './index';
 
@@ -42,7 +44,8 @@ describe('role isolation (database policies)', () => {
 
   it('driver route data carries no phone numbers', async () => {
     const r = await driverRoute(dana, todayRoute);
-    expect(JSON.stringify(r)).not.toMatch(/555/);
+    // Look for real phone numbers (+1506555…, 506-555-…), not "555" inside an ID or a timestamp's milliseconds.
+    expect(JSON.stringify(r)).not.toMatch(/\+1506555|506\D?555/);
   });
 
   it('client sees only their own properties (and several of them)', async () => {
@@ -73,7 +76,7 @@ describe('phone number reveal', () => {
     await expect(revealPhone(sam, stopId)).rejects.toThrow();
     const logRows = await asSystem((tx) => tx.query<any>('select * from phone_reveals where route_stop_id = $1', [stopId]));
     expect(logRows).toHaveLength(1);
-    expect(JSON.stringify(logRows)).not.toMatch(/555/);
+    expect(JSON.stringify(logRows)).not.toMatch(/\+1506555|506\D?555/);
   });
 });
 
@@ -244,5 +247,222 @@ describe('admin data', () => {
 
   it('reorderStops ignores unknown ids safely', async () => {
     await expect(reorderStops(admin, todayRoute, [randomUUID()])).resolves.toBeTruthy();
+  });
+});
+
+describe('team members (admins)', () => {
+  it('an admin can give another person admin access, and remove it again', async () => {
+    const id = await createAdmin(admin, { fullName: 'Pat Helper', email: 'Pat@Example.com', password: 'temp-pass-123' });
+    const list = await listAdmins(admin);
+    expect(list.find((a) => a.id === id)).toMatchObject({ full_name: 'Pat Helper', email: 'pat@example.com', active: true });
+    const pat = { id, role: 'admin' as const };
+    expect((await verifySession(await createSessionToken(id)))?.role).toBe('admin');
+    // The new admin can manage the team too.
+    expect((await listAdmins(pat)).length).toBeGreaterThanOrEqual(2);
+    await setAdminActive(admin, id, false);
+    expect(await verifySession(await createSessionToken(id))).toBeNull();
+    await setAdminActive(admin, id, true);
+    expect(await verifySession(await createSessionToken(id))).not.toBeNull();
+  });
+
+  it('blocks duplicate emails, self-removal and non-admins', async () => {
+    await expect(createAdmin(admin, { fullName: 'Again', email: 'pat@example.com', password: 'temp-pass-123' })).rejects.toThrow(/already has an account/);
+    await expect(setAdminActive(admin, admin.id, false)).rejects.toThrow(/your own access/);
+    await expect(createAdmin(dana, { fullName: 'X', email: 'x@example.com' })).rejects.toThrow();
+    await expect(listAdmins(jane)).rejects.toThrow();
+  });
+});
+
+describe('properties, quotes and payments', () => {
+  it('saves equipment and shows it to the driver, but never quotes or office notes', async () => {
+    const r = await driverRoute(dana, todayRoute);
+    const stop = r!.stops[0];
+    const before = await getProperty(admin, stop.property_id);
+    await updateProperty(admin, stop.property_id, {
+      clientId: before.client_id, address: before.address, lat: before.lat, lng: before.lng, instructions: before.instructions,
+      serviceMinutes: before.service_minutes, active: true, equipment: ['snowblower', 'snowplow', 'snowplow'], quotedAmount: '$1,250.50', officeNotes: 'Pays late',
+    });
+    const after = await getProperty(admin, stop.property_id);
+    expect(after).toMatchObject({ equipment: ['snowblower', 'snowplow'], quoted_amount: 1250.5, office_notes: 'Pays late' });
+
+    const driverView = await driverRoute(dana, todayRoute);
+    expect(driverView!.stops[0].equipment).toEqual(['snowblower', 'snowplow']);
+    expect(JSON.stringify(driverView)).not.toMatch(/1250\.5|Pays late/);
+    // Direct reads of the admin-only tables return nothing for drivers and clients.
+    for (const u of [dana, jane]) {
+      expect(await asUser(u, (tx) => tx.query('select * from property_admin_details'))).toHaveLength(0);
+      expect(await asUser(u, (tx) => tx.query('select * from client_payments'))).toHaveLength(0);
+    }
+    await expect(listProperties(dana)).rejects.toThrow();
+  });
+
+  it('rejects unknown equipment and bad amounts', async () => {
+    const [p] = await listProperties(admin);
+    const full = await getProperty(admin, p.id);
+    const base = { clientId: full.client_id, address: full.address, lat: full.lat, lng: full.lng };
+    await expect(updateProperty(admin, p.id, { ...base, equipment: ['shovel'] })).rejects.toThrow();
+    await expect(updateProperty(admin, p.id, { ...base, quotedAmount: 'lots' })).rejects.toThrow(/amount/);
+    await expect(updateProperty(admin, p.id, { ...base, quotedAmount: '-5' })).rejects.toThrow(/negative/);
+  });
+
+  it('works out the balance from active property quotes minus payments', async () => {
+    const clientId = await createClient(admin, { name: 'Balance Test', phone: '506-555-0192', notifyChannel: 'sms' });
+    const a = await createProperty(admin, { clientId, address: '1 Quote St', lat: 46.1, lng: -64.8, quotedAmount: '700' });
+    await createProperty(admin, { clientId, address: '2 Quote St', lat: 46.1, lng: -64.8, quotedAmount: '500' });
+    const pay = await recordPayment(admin, { clientId, amount: '800', paidOn: '2026-11-03', note: 'e-transfer' });
+    let d = await getClient(admin, clientId);
+    expect(d!.money).toEqual({ quotedTotal: 1200, paidTotal: 800, balance: 400 });
+    expect(d!.payments[0]).toMatchObject({ amount: 800, paid_on: '2026-11-03', note: 'e-transfer' });
+
+    await setPropertyActive(admin, a, false); // inactive properties do not count
+    d = await getClient(admin, clientId);
+    expect(d!.money.balance).toBe(-300);
+
+    await deletePayment(admin, pay);
+    d = await getClient(admin, clientId);
+    expect(d!.money).toEqual({ quotedTotal: 500, paidTotal: 0, balance: 500 });
+    await expect(recordPayment(admin, { clientId, amount: '0', paidOn: '2026-11-03' })).rejects.toThrow(/more than/);
+    await expect(recordPayment(dana, { clientId, amount: '10', paidOn: '2026-11-03' })).rejects.toThrow();
+  });
+
+  it('moves a property to a different owner', async () => {
+    const from = await createClient(admin, { name: 'Owner One', phone: '506-555-0193', notifyChannel: 'sms' });
+    const to = await createClient(admin, { name: 'Owner Two', phone: '506-555-0194', notifyChannel: 'sms' });
+    const id = await createProperty(admin, { clientId: from, address: '3 Move St', lat: 46.1, lng: -64.8, quotedAmount: '300' });
+    await updateProperty(admin, id, { clientId: to, address: '3 Move St', lat: 46.1, lng: -64.8, quotedAmount: '300' });
+    expect((await getClient(admin, from))!.properties).toHaveLength(0);
+    expect((await getClient(admin, to))!.money.quotedTotal).toBe(300);
+  });
+});
+
+describe('service updates by email', () => {
+  const tz = 'America/Moncton';
+  async function routeFor(clientId: string, startOffsetMinutes: number) {
+    const [p] = await asSystem((tx) => tx.query<{ id: string }>('select id from properties where client_id = $1', [clientId]));
+    const start = addMinutes(new Date(), startOffsetMinutes);
+    const routeId = await createDraftRoute(admin, {
+      serviceDate: localDate(start, tz), plannedStartTime: localTime(start, tz), driverId: DEMO.driver2,
+      startAddress: 'Depot', startLat: 46.11, startLng: -64.8, propertyIds: [p.id],
+    });
+    await setRouteStatus(admin, routeId, 'publish');
+    await runSchedulerTick();
+    return routeId;
+  }
+  const rowsFor = (routeId: string) =>
+    asSystem((tx) => tx.query<any>(`select channel, to_address, subject, body, status, simulated, cancel_reason, error from notifications where route_id = $1 order by created_at`, [routeId]));
+
+  it('needs an email address before email can be chosen', async () => {
+    await expect(createClient(admin, { name: 'No Email', phone: '506-555-0180', notifyChannel: 'email' })).rejects.toThrow(/email address/);
+  });
+
+  it('sends the arrival window to the email address, with a subject, simulated outside production', async () => {
+    const clientId = await createClient(admin, { name: 'Erin Email', phone: '506-555-0181', email: 'erin@example.com', notifyChannel: 'email' }, { address: '1 Inbox Rd', lat: 46.1, lng: -64.8 });
+    const rows = await rowsFor(await routeFor(clientId, -45));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ channel: 'email', to_address: 'erin@example.com', status: 'sent', simulated: true });
+    expect(rows[0].subject).toMatch(/^Snow removal at 1 Inbox Rd today/);
+    expect(rows[0].body).toMatch(/^Hi Erin,/);
+    expect(rows[0].body).not.toMatch(/\+1506555|506\D?555/);
+  });
+
+  it('switching from email to SMS replaces a waiting email with a text', async () => {
+    const clientId = await createClient(admin, { name: 'Sam Switch', phone: '506-555-0182', email: 'sam@example.com', notifyChannel: 'email' }, { address: '2 Switch St', lat: 46.1, lng: -64.8 });
+    const routeId = await routeFor(clientId, 240);
+    expect((await rowsFor(routeId)).map((r) => [r.channel, r.status])).toEqual([['email', 'scheduled']]);
+    await updateClient(admin, clientId, { name: 'Sam Switch', phone: '506-555-0182', email: 'sam@example.com', notifyChannel: 'sms', optedOut: false });
+    const rows = await rowsFor(routeId);
+    expect(rows.map((r) => [r.channel, r.status, r.to_address])).toEqual([['email', 'cancelled', 'sam@example.com'], ['sms', 'scheduled', '+15065550182']]);
+    expect(rows[0].cancel_reason).toBe('Contact method changed');
+  });
+
+  it('a manual message goes by email, and a bad address is reported as failed', async () => {
+    const clientId = await createClient(admin, { name: 'Fay Fail', phone: '506-555-0183', email: 'fail@example.com', notifyChannel: 'email' });
+    const res = await sendManualMessage(admin, { target: { type: 'client', clientId }, body: 'Heavy snow tonight. Crews start at 4 a.m.' });
+    expect(res.queued).toBe(1);
+    const [n] = await asSystem((tx) => tx.query<any>('select channel, to_address, subject, status, error from notifications where client_id = $1', [clientId]));
+    expect(n).toMatchObject({ channel: 'email', to_address: 'fail@example.com', status: 'failed' });
+    expect(n.subject).toMatch(/Service update from/);
+    expect(n.error).toMatch(/Simulated failure: email/);
+  });
+
+  it('never uses real email outside production', () => {
+    expect(getMessenger('email').simulated).toBe(true);
+    expect(() => resendMessenger()).toThrow(/Refusing/);
+    const dev = loadConfig({ APP_ENV: 'development', MESSAGING_MODE: 'live', RESEND_API_KEY: 're_x', EMAIL_FROM: 'a@b.c' } as any);
+    expect(dev.emailMode).toBe('simulated');
+    const prod = loadConfig({ APP_ENV: 'production', SESSION_SECRET: 'x'.repeat(32), MESSAGING_MODE: 'live', RESEND_API_KEY: 're_x', EMAIL_FROM: 'a@b.c' } as any);
+    expect(prod.emailMode).toBe('live');
+    expect(prod.messagingMode).toBe('simulated'); // no Twilio values: SMS stays simulated
+  });
+});
+
+describe('resident contact on a property', () => {
+  const tz = 'America/Moncton';
+  async function publishFor(propertyId: string, startOffsetMinutes: number) {
+    const start = addMinutes(new Date(), startOffsetMinutes);
+    const routeId = await createDraftRoute(admin, {
+      serviceDate: localDate(start, tz), plannedStartTime: localTime(start, tz), driverId: DEMO.driver1,
+      startAddress: 'Depot', startLat: 46.11, startLng: -64.8, propertyIds: [propertyId],
+    });
+    await setRouteStatus(admin, routeId, 'publish');
+    await runSchedulerTick();
+    return routeId;
+  }
+  const rowsFor = (routeId: string) =>
+    asSystem((tx) => tx.query<any>(`select client_id, channel, to_address, subject, body, status, cancel_reason from notifications where route_id = $1 order by created_at`, [routeId]));
+  const base = { address: '10 Rental Row', lat: 46.1, lng: -64.8 };
+
+  it('sends updates to the resident instead of the owner, by the resident’s method', async () => {
+    const ownerId = await createClient(admin, { name: 'Olivia Owner', phone: '506-555-0170', email: 'olivia@example.com', notifyChannel: 'sms' });
+    const id = await createProperty(admin, { ...base, clientId: ownerId, resident: { name: 'Rita Resident', email: 'rita@example.com', notifyChannel: 'email' } });
+    const rows = await rowsFor(await publishFor(id, -45));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ client_id: ownerId, channel: 'email', to_address: 'rita@example.com', status: 'sent' });
+    expect(rows[0].body).toMatch(/^Hi Rita,/);
+    expect(JSON.stringify(rows)).not.toMatch(/olivia|Olivia|\+15065550170/);
+    expect(await getProperty(admin, id)).toMatchObject({ has_resident: true, resident_name: 'Rita Resident', resident_channel: 'email' });
+  });
+
+  it('clearing the resident sends waiting updates back to the owner', async () => {
+    const ownerId = await createClient(admin, { name: 'Oscar Owner', phone: '506-555-0171', notifyChannel: 'sms' });
+    const id = await createProperty(admin, { ...base, address: '11 Rental Row', clientId: ownerId, resident: { name: '', phone: '506-555-0172', notifyChannel: 'sms' } });
+    const routeId = await publishFor(id, 240);
+    expect((await rowsFor(routeId)).map((r) => [r.to_address, r.status])).toEqual([['+15065550172', 'scheduled']]);
+    // A save that leaves the resident out keeps it.
+    await updateProperty(admin, id, { ...base, address: '11 Rental Row', clientId: ownerId });
+    expect((await getProperty(admin, id)).has_resident).toBe(true);
+    await updateProperty(admin, id, { ...base, address: '11 Rental Row', clientId: ownerId, resident: null });
+    const rows = await rowsFor(routeId);
+    expect(rows.map((r) => [r.to_address, r.status])).toEqual([['+15065550172', 'cancelled'], ['+15065550171', 'scheduled']]);
+    expect(rows[0].cancel_reason).toBe('Contact method changed');
+  });
+
+  it('the driver reaches the resident’s phone; drivers and clients cannot read resident details', async () => {
+    const ownerId = await createClient(admin, { name: 'Pat Owner', phone: '506-555-0173', notifyChannel: 'sms' });
+    const id = await createProperty(admin, { ...base, address: '12 Rental Row', clientId: ownerId, resident: { name: 'Ray', phone: '506-555-0174', notifyChannel: 'sms' } });
+    const routeId = await publishFor(id, 240);
+    const r = await driverRoute(dana, routeId);
+    expect((await revealPhone(dana, r!.stops[0].id)).phone).toBe('+15065550174');
+    expect(JSON.stringify(r)).not.toMatch(/\+15065550174|Ray/);
+    for (const u of [dana, jane]) expect(await asUser(u, (tx) => tx.query('select * from property_residents'))).toHaveLength(0);
+  });
+
+  it('the private status link greets the resident, and the owner when there is none', async () => {
+    const ownerId = await createClient(admin, { name: 'Sky Owner', phone: '506-555-0177', notifyChannel: 'sms' });
+    const id = await createProperty(admin, { ...base, address: '13 Rental Row', clientId: ownerId, resident: { name: 'Tess Tenant', phone: '506-555-0178' } });
+    const { token } = await createStatusLink(admin, id);
+    expect((await statusByToken(token))!.firstName).toBe('Tess');
+    await updateProperty(admin, id, { ...base, address: '13 Rental Row', clientId: ownerId, resident: { name: '', phone: '506-555-0178' } });
+    expect((await statusByToken(token))!.firstName).toBe('');
+    await updateProperty(admin, id, { ...base, address: '13 Rental Row', clientId: ownerId, resident: null });
+    expect((await statusByToken(token))!.firstName).toBe('Sky');
+  });
+
+  it('checks the resident has a contact for the chosen method', async () => {
+    const ownerId = await createClient(admin, { name: 'Quinn Owner', phone: '506-555-0175', notifyChannel: 'sms' });
+    await expect(createProperty(admin, { ...base, clientId: ownerId, resident: { name: 'Only Name' } })).rejects.toThrow(/phone or email/);
+    await expect(createProperty(admin, { ...base, clientId: ownerId, resident: { phone: '506-555-0176', notifyChannel: 'email' } })).rejects.toThrow(/resident’s email/);
+    await expect(createProperty(admin, { ...base, clientId: ownerId, resident: { email: 'a@example.com', notifyChannel: 'sms' } })).rejects.toThrow(/resident’s phone/);
+    await expect(createProperty(admin, { ...base, clientId: ownerId, resident: { phone: '12', notifyChannel: 'sms' } })).rejects.toThrow(/valid phone/);
   });
 });

@@ -31,7 +31,7 @@ export function ImportForm({ template }: { template: string }) {
           <textarea rows={6} className="mt-2 w-full rounded-lg border border-slate-300 p-2 font-mono text-xs" value={text} onChange={(e) => setText(e.target.value)} />
           <button type="button" className={`${btn('secondary', 'sm')} mt-2`} onClick={() => load(text)}>Preview</button>
         </details>
-        <p className="mt-3 text-xs text-slate-500">Columns: client_name, phone, address (required); email, notify_method (sms or voice), latitude, longitude, instructions, service_minutes (optional).</p>
+        <p className="mt-3 text-xs text-slate-500">Columns: client_name, phone, address (required); email, notify_method (sms, email or voice), latitude, longitude, instructions, service_minutes (optional).</p>
       </Card>
 
       {pending && <p className="text-sm text-slate-600">Working…</p>}
@@ -57,7 +57,7 @@ export function ImportForm({ template }: { template: string }) {
                         <td className="py-1 pr-3 tabular-nums text-slate-500">{r.line}</td>
                         <td className="py-1 pr-3">{r.clientName || '—'}</td>
                         <td className="py-1 pr-3">{r.address || '—'}</td>
-                        <td className="py-1 pr-3">{r.notifyChannel === 'sms' ? 'SMS' : 'Voice'}</td>
+                        <td className="py-1 pr-3">{({ sms: 'SMS', email: 'Email', voice: 'Voice' } as const)[r.notifyChannel]}</td>
                         <td className="py-1">
                           {r.errors.length ? <span className="text-rose-800">✕ {r.errors.join('; ')}</span> : <Tag tone="success">✓ Ready</Tag>}
                           {r.warnings.map((w) => <div key={w} className="text-xs text-amber-800">! {w}</div>)}

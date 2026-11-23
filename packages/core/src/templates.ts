@@ -27,3 +27,19 @@ export function voiceMessage(i: TemplateInput, isUpdate = false): string {
   const lead = isUpdate ? 'This is an updated time. ' : '';
   return tidy(`Hello, this is an automated service update from ${i.businessName}. ${lead}Snow removal at ${i.address} is expected today between ${p.start} and ${p.end}. Please move vehicles from the driveway before ${p.start}. Arrival times are approximate and may change with weather and road conditions. Thank you.`);
 }
+
+/** Email: a subject line plus a plain-text body. */
+export function emailMessage(i: TemplateInput, isUpdate = false): { subject: string; body: string } {
+  const p = parts(i);
+  const subject = `${isUpdate ? 'Updated time: ' : ''}Snow removal at ${i.address} today, ${p.start} to ${p.end}`;
+  const body = tidy(
+    `Hi ${p.first},\n\n` +
+      `${isUpdate ? 'We have an updated time for you. ' : ''}Snow removal at ${i.address} is expected today between ${p.start} and ${p.end}.\n\n` +
+      `Please move vehicles from the driveway before ${p.start}. Arrival times are approximate and may change with weather and road conditions.\n\n` +
+      `Thank you,\n${i.businessName}`,
+  );
+  return { subject, body };
+}
+
+/** Subject line for a message an admin sends by hand. */
+export const manualEmailSubject = (businessName: string) => `Service update from ${businessName}`;

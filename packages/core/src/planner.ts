@@ -10,9 +10,11 @@ export interface PlannerStop {
   stopId: string;
   status: StopStatus;
   estimate: StopEstimate;
-  /** False when the client opted out, has no phone, or the property is inactive. */
+  /** False when the client opted out, has no phone or email for their channel, or the property is inactive. */
   eligible: boolean;
   channel: Channel;
+  /** Phone or email the message goes to. When given, a waiting message to another address is replaced. */
+  to?: string | null;
 }
 
 export interface ExistingNotification {
@@ -24,6 +26,8 @@ export interface ExistingNotification {
   windowEnd: string | null;
   scheduledAt: string;
   sentAt: string | null;
+  channel?: Channel;
+  to?: string | null;
 }
 
 export interface PlannedNotification {
@@ -84,7 +88,7 @@ export function planNotifications(input: PlannerInput): PlannerResult {
     if (stop.status !== 'pending' || !stop.estimate.upcoming || !stop.estimate.window || !stop.estimate.arrival) {
       cancelAll(`Stop ${stop.status}`); continue;
     }
-    if (!stop.eligible) { cancelAll('Client not eligible (opted out, inactive or no phone)'); continue; }
+    if (!stop.eligible) { cancelAll('Client not eligible (opted out, inactive or no contact details)'); continue; }
 
     const communicated = mine
       .filter((n) => IN_FLIGHT.includes(n.status) && n.windowStart && n.windowEnd)
@@ -122,10 +126,12 @@ export function planNotifications(input: PlannerInput): PlannerResult {
 
     if (!desired) { cancelAll('Estimate still inside communicated window'); continue; }
 
+    // A waiting message is kept only if it still matches: same time window, and the client's current channel and address.
+    const sameContact = (n: ExistingNotification) => (n.channel === undefined || n.channel === stop.channel) && (n.to === undefined || stop.to === undefined || n.to === stop.to);
     const keep = pending.find(
-      (n) => n.kind === desired!.kind && n.windowStart === desired!.window.start && n.windowEnd === desired!.window.end,
+      (n) => n.kind === desired!.kind && n.windowStart === desired!.window.start && n.windowEnd === desired!.window.end && sameContact(n),
     );
-    for (const n of pending) if (n !== keep) result.cancel.push({ id: n.id, reason: 'Replaced by newer estimate' });
+    for (const n of pending) if (n !== keep) result.cancel.push({ id: n.id, reason: sameContact(n) ? 'Replaced by newer estimate' : 'Contact method changed' });
     if (!keep) result.create.push(desired);
   }
   return result;

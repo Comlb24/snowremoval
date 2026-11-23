@@ -1,24 +1,22 @@
 import { COMING_SOON } from '@/lib/features';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { cookies } from 'next/headers';
 import { config, getClient } from '@snow/server';
 import { requirePageRole } from '@/lib/session';
-import { btn, Card, Field, input, Notice, PageHeader, SimTag, Status, Tag } from '@/components/ui';
-import { day, dt, phone } from '@/lib/format';
-import {
-  createClientLoginAction, createStatusLinkAction, revokeStatusLinkAction, savePropertyAction, sendMessageAction, setPropertyActiveAction, updateClientAction,
-} from '../../actions';
-import { CopyLink } from './copy-link';
+import { CHANNEL_LABELS, equipmentText, localDate, type Channel } from '@snow/core';
+import { btn, Card, Field, input, LinkButton, Notice, PageHeader, SimTag, Status, Tag } from '@/components/ui';
+import { day, dt, money as fmtMoney, phone } from '@/lib/format';
+import { createClientLoginAction, deletePaymentAction, recordPaymentAction, sendMessageAction, updateClientAction } from '../../actions';
+import { Balance } from '../balance';
 
 export default async function ClientPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ msg?: string; error?: string }> }) {
   const user = await requirePageRole('admin');
   const { id } = await params;
   const sp = await searchParams;
-  const flashLink = (await cookies()).get('snow_flash_link')?.value;
   const data = await getClient(user, id);
   if (!data) notFound();
-  const { client, properties, visits, communications, preferences } = data;
+  const { client, properties, payments, money, visits, communications, preferences } = data;
+  const today = localDate(new Date().toISOString(), config().timeZone);
 
   return (
     <>
@@ -28,14 +26,6 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
       />
       {sp.msg && <div className="mb-4"><Notice tone="success">{sp.msg}</Notice></div>}
       {sp.error && <div className="mb-4"><Notice tone="danger">{sp.error}</Notice></div>}
-      {flashLink && (
-        <div className="mb-4">
-          <Notice tone="warning">
-            New private status link. Copy it now — it is shown only once. Creating it turned off any older link.
-            <CopyLink url={flashLink} />
-          </Notice>
-        </div>
-      )}
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card title="Contact & preferences">
@@ -43,10 +33,11 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
             <input type="hidden" name="clientId" value={client.id} />
             <Field label="Name"><input name="name" defaultValue={client.name} required className={input} /></Field>
             <Field label="Phone"><input name="phone" defaultValue={phone(client.phone)} required className={input} /></Field>
-            <Field label="Email (optional)"><input name="email" defaultValue={client.email ?? ''} className={input} /></Field>
+            <Field label="Email (optional)" hint="Needed if updates go by email."><input name="email" type="email" defaultValue={client.email ?? ''} className={input} /></Field>
             <fieldset>
               <legend className="mb-1 text-sm font-medium text-slate-700">Send service updates by</legend>
               <label className="mr-4 inline-flex items-center gap-2 text-sm"><input type="radio" name="notifyChannel" value="sms" defaultChecked={client.notify_channel === 'sms'} /> SMS</label>
+              <label className="mr-4 inline-flex items-center gap-2 text-sm"><input type="radio" name="notifyChannel" value="email" defaultChecked={client.notify_channel === 'email'} /> Email</label>
               {/* A client already set to voice keeps the option, so saving the form never drops their choice. */}
               {(() => {
                 const off = COMING_SOON.voiceCalls && client.notify_channel !== 'voice';
@@ -90,63 +81,55 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
         </Card>
 
         <div className="space-y-4 lg:col-span-2">
-          {properties.map((p: any) => (
-            <Card
-              key={p.id}
-              title={<span className={p.active ? '' : 'text-slate-400'}>{p.address}</span>}
-              actions={p.active ? <Tag tone="success">Active</Tag> : <Tag>Inactive</Tag>}
-            >
-              <form action={savePropertyAction} className="grid gap-3 sm:grid-cols-2">
-                <input type="hidden" name="clientId" value={client.id} />
-                <input type="hidden" name="propertyId" value={p.id} />
-                <input type="hidden" name="active" value={p.active ? 'on' : 'off'} />
-                <input type="hidden" name="origLat" value={String(p.lat)} />
-                <input type="hidden" name="origLng" value={String(p.lng)} />
-                <Field label="Address"><input name="address" defaultValue={p.address} className={input} /></Field>
-                <Field label="Service time (minutes)"><input name="serviceMinutes" type="number" defaultValue={p.service_minutes} className={input} /></Field>
-                <div className="sm:col-span-2">
-                  <Field label="Driveway instructions"><textarea name="instructions" rows={2} defaultValue={p.instructions} className={input} /></Field>
-                </div>
-                <Field label="Latitude" hint={<>Location: {p.location_source === 'simulated' ? <Tag tone="warning">Simulated</Tag> : p.location_source}</>}>
-                  <input name="lat" defaultValue={p.lat} className={input} />
-                </Field>
-                <Field label="Longitude"><input name="lng" defaultValue={p.lng} className={input} /></Field>
-                <div className="flex flex-wrap gap-2 sm:col-span-2">
-                  <button className={btn('secondary', 'sm')}>Save property</button>
-                </div>
-              </form>
-              <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 text-sm">
-                <form action={setPropertyActiveAction}>
-                  <input type="hidden" name="clientId" value={client.id} />
-                  <input type="hidden" name="propertyId" value={p.id} />
-                  <input type="hidden" name="active" value={p.active ? 'false' : 'true'} />
-                  <button className={btn('ghost', 'sm')}>{p.active ? 'Mark inactive' : 'Mark active'}</button>
-                </form>
-                <span className="text-slate-500">Status link: {p.has_status_link ? 'active' : 'none'}</span>
-                <form action={createStatusLinkAction}>
-                  <input type="hidden" name="clientId" value={client.id} />
-                  <input type="hidden" name="propertyId" value={p.id} />
-                  <button className={btn('secondary', 'sm')}>{p.has_status_link ? 'Replace link' : 'Create link'}</button>
-                </form>
-                {p.has_status_link && (
-                  <form action={revokeStatusLinkAction}>
-                    <input type="hidden" name="clientId" value={client.id} />
-                    <input type="hidden" name="propertyId" value={p.id} />
-                    <button className={btn('danger', 'sm')}>Revoke link</button>
-                  </form>
-                )}
-              </div>
-            </Card>
-          ))}
-
-          <Card title="Add another property">
-            <form action={savePropertyAction} className="grid gap-3 sm:grid-cols-2">
+          <Card title="Money" actions={<Balance amount={money.balance} />}>
+            <dl className="mb-4 grid grid-cols-3 gap-3 text-sm">
+              <div className="rounded-lg bg-slate-50 p-3"><dt className="text-slate-500">Quoted</dt><dd className="text-lg font-semibold tabular-nums">{fmtMoney(money.quotedTotal)}</dd></div>
+              <div className="rounded-lg bg-slate-50 p-3"><dt className="text-slate-500">Paid</dt><dd className="text-lg font-semibold tabular-nums">{fmtMoney(money.paidTotal)}</dd></div>
+              <div className="rounded-lg bg-slate-50 p-3"><dt className="text-slate-500">Balance</dt><dd className="text-lg font-semibold tabular-nums">{fmtMoney(money.balance)}</dd></div>
+            </dl>
+            <p className="mb-3 text-xs text-slate-500">Quoted is the total of this client’s active property quotes. Only admins see money.</p>
+            <form action={recordPaymentAction} className="grid gap-2 sm:grid-cols-[8rem_10rem_1fr_auto] sm:items-end">
               <input type="hidden" name="clientId" value={client.id} />
-              <Field label="Address"><input name="address" required className={input} /></Field>
-              <Field label="Service time (minutes)"><input name="serviceMinutes" type="number" defaultValue={15} className={input} /></Field>
-              <div className="sm:col-span-2"><Field label="Driveway instructions"><textarea name="instructions" rows={2} className={input} /></Field></div>
-              <div className="sm:col-span-2"><button className={btn('secondary')}>Add property</button></div>
+              <Field label="Amount"><input name="amount" required inputMode="decimal" placeholder="250.00" className={input} /></Field>
+              <Field label="Date paid"><input name="paidOn" type="date" required defaultValue={today} className={input} /></Field>
+              <Field label="Note (optional)"><input name="note" maxLength={200} placeholder="e-transfer, cheque #…" className={input} /></Field>
+              <button className={btn('secondary')}>Record payment</button>
             </form>
+            {payments.length > 0 && (
+              <ul className="mt-4 divide-y divide-slate-100 border-t border-slate-100 text-sm">
+                {payments.map((pm: any) => (
+                  <li key={pm.id} className="flex flex-wrap items-center gap-3 py-2">
+                    <span className="w-24 font-medium tabular-nums">{fmtMoney(pm.amount)}</span>
+                    <span className="text-slate-600">{day(pm.paid_on)}{pm.note ? ` · ${pm.note}` : ''}{pm.recorded_by ? ` · by ${pm.recorded_by}` : ''}</span>
+                    <form action={deletePaymentAction} className="ml-auto">
+                      <input type="hidden" name="clientId" value={client.id} />
+                      <input type="hidden" name="paymentId" value={pm.id} />
+                      <button className={btn('ghost', 'sm')} aria-label={`Remove payment of ${fmtMoney(pm.amount)}`}>Remove</button>
+                    </form>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+
+          <Card title={`Properties (${properties.length})`} actions={<LinkButton href={`/admin/properties/new?clientId=${client.id}`}>Add property</LinkButton>}>
+            {properties.length === 0 ? (
+              <p className="text-sm text-slate-500">No properties yet.</p>
+            ) : (
+              <ul className="divide-y divide-slate-100 text-sm">
+                {properties.map((p: any) => (
+                  <li key={p.id} className="flex flex-wrap items-center gap-3 py-2">
+                    <div className="flex-1">
+                      <Link href={`/admin/properties/${p.id}`} className={`font-medium hover:underline ${p.active ? 'text-sky-800' : 'text-slate-400'}`}>{p.address}</Link>
+                      {!p.active && <> <Tag>Inactive</Tag></>}
+                      <div className="text-slate-500">{equipmentText(p.equipment) || 'Equipment not set'}{p.instructions ? ` · ${p.instructions}` : ''}</div>
+                      {p.has_resident && <div className="text-xs text-sky-800">Updates go to resident{p.resident_name ? ` ${p.resident_name}` : ''}, not to this client</div>}
+                    </div>
+                    <span className="tabular-nums">{fmtMoney(p.quoted_amount)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </Card>
         </div>
       </div>
@@ -177,7 +160,7 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
             <input type="hidden" name="returnTo" value={`/admin/clients/${client.id}`} />
             <textarea name="body" required rows={2} maxLength={480} placeholder="Send an immediate message…" className={input} />
             <button className={btn('secondary', 'sm')} disabled={client.opted_out}>
-              Send now by {client.notify_channel === 'sms' ? 'SMS' : 'voice call'}
+              Send now by {({ sms: 'SMS', email: 'email', voice: 'voice call' } as Record<string, string>)[client.notify_channel]}
             </button>
             {client.opted_out && <p className="text-xs text-rose-700">This client opted out. No messages are sent.</p>}
           </form>
@@ -190,9 +173,10 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
                   <div className="flex flex-wrap items-center gap-2">
                     <Status status={n.status} />
                     <SimTag simulated={n.simulated} />
-                    <span className="text-slate-600">{n.channel === 'sms' ? 'SMS' : 'Voice'} · {n.kind} · {dt(n.sent_at ?? n.scheduled_at)}</span>
+                    <span className="text-slate-600">{CHANNEL_LABELS[n.channel as Channel]} · {n.kind} · {dt(n.sent_at ?? n.scheduled_at)}</span>
                   </div>
-                  <p className="mt-1 text-slate-700">{n.body}</p>
+                  {n.subject && <p className="mt-1 font-medium text-slate-800">{n.subject}</p>}
+                  <p className="mt-1 whitespace-pre-line text-slate-700">{n.body}</p>
                   {n.error && <p className="text-rose-700">{n.error}</p>}
                 </li>
               ))}

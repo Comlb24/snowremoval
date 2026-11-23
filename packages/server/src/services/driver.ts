@@ -40,7 +40,7 @@ export async function driverRoute(user: SessionUser, routeId: string) {
     if (!route) return null;
     const stops = await tx.query<any>(
       `select s.id, s.position, s.status, s.est_arrival, s.window_start, s.window_end, s.started_at, s.finished_at, s.service_minutes,
-              p.id as property_id, p.address, p.lat, p.lng, p.instructions, c.name as client_name,
+              p.id as property_id, p.address, p.lat, p.lng, p.instructions, p.equipment, c.name as client_name,
               v.note, v.block_reason, coalesce(v.photo_count, 0)::int as photo_count
          from route_stops s join properties p on p.id = s.property_id join clients c on c.id = p.client_id
          left join visits v on v.route_stop_id = s.id

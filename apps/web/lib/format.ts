@@ -9,3 +9,5 @@ export const dt = (d: Date | string | null | undefined) => (d ? formatDateTime(t
 export const day = (d: Date | string | null | undefined) => (d ? formatDate(typeof d === 'string' && d.length === 10 ? d + 'T12:00:00Z' : toIso(d), tz()) : '—');
 export const win = (s: Date | string | null | undefined, e: Date | string | null | undefined) => (s && e ? formatWindow({ start: toIso(s), end: toIso(e) }, tz()) : '—');
 export const phone = (p: string | null | undefined) => (p ? formatPhone(p) : '—');
+const CAD = new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' });
+export const money = (n: number | string | null | undefined) => (n == null || n === '' ? '—' : CAD.format(Number(n)));

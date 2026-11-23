@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { CHANNEL_LABELS, type Channel } from '@snow/core';
 import { notFound } from 'next/navigation';
 import { config, driverOptions, getRouteDetail, getRoutePreview, listActiveProperties } from '@snow/server';
 import { localTime } from '@snow/core';
@@ -91,8 +92,8 @@ export default async function RoutePage({ params, searchParams }: { params: Prom
                   <tr key={s.id} className="align-top">
                     <td className="py-2 pr-2 tabular-nums text-slate-500">{i + 1}</td>
                     <td className="py-2 pr-3">
-                      <Link href={`/admin/clients/${s.client_id}`} className="font-medium hover:underline">{s.address}</Link>
-                      <div className="text-xs text-slate-500">{s.client_name} · {s.service_minutes} min · {Math.round(s.drive_minutes)} min drive {s.notify_channel === 'voice' && '· voice call'}</div>
+                      <Link href={`/admin/properties/${s.property_id}`} className="font-medium hover:underline">{s.address}</Link>
+                      <div className="text-xs text-slate-500">{s.client_name} · {s.service_minutes} min · {Math.round(s.drive_minutes)} min drive {s.notify_channel !== 'sms' && `· ${s.notify_channel === 'email' ? 'email' : 'voice call'}`}{s.to_resident && ' · to resident'}</div>
                       {s.status === 'blocked' && <div className="text-xs text-amber-800">! {s.block_reason ?? 'Blocked'}{s.note ? ` — “${s.note}”` : ''}</div>}
                       {s.status === 'completed' && <div className="text-xs">{s.photo_count > 0 ? <Tag tone="success">📷 Photo evidence</Tag> : <Tag>Completed — no photo</Tag>}</div>}
                     </td>
@@ -173,7 +174,7 @@ export default async function RoutePage({ params, searchParams }: { params: Prom
                     <Status status={n.status} />
                     <SimTag simulated={n.simulated} />
                     <span>{n.client_name}</span>
-                    <span className="text-slate-500">{n.kind} · {n.channel === 'sms' ? 'SMS' : 'voice'} · {n.status === 'scheduled' ? `due ${dt(n.scheduled_at)}` : dt(n.sent_at ?? n.scheduled_at)}</span>
+                    <span className="text-slate-500">{n.kind} · {CHANNEL_LABELS[n.channel as Channel]} · {n.status === 'scheduled' ? `due ${dt(n.scheduled_at)}` : dt(n.sent_at ?? n.scheduled_at)}</span>
                   </div>
                   {n.window_start && <div className="text-xs text-slate-600">Window {win(n.window_start, n.window_end)}</div>}
                   {n.error && <div className="text-xs text-rose-700">{n.error}</div>}

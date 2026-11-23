@@ -113,3 +113,35 @@ export async function driverOptions(user: SessionUser) {
   requireRole(user, 'admin');
   return asUser(user, (tx) => tx.query<{ id: string; full_name: string }>(`select id, full_name from profiles where role = 'driver' and active order by full_name`));
 }
+
+// ---------------------------------------------------------------- team (admins)
+export async function listAdmins(user: SessionUser) {
+  requireRole(user, 'admin');
+  return asUser(user, (tx) =>
+    tx.query<{ id: string; full_name: string; email: string | null; active: boolean; created_at: string }>(
+      `select id, full_name, email, active, created_at from profiles where role = 'admin' order by active desc, full_name`,
+    ),
+  );
+}
+
+/** Give a new person admin access: they sign in with this email and password. */
+export async function createAdmin(user: SessionUser, raw: unknown) {
+  requireRole(user, 'admin');
+  const email = String((raw as any)?.email ?? '').trim().toLowerCase();
+  const taken = await asUser(user, (tx) => tx.query('select 1 from profiles where lower(email) = $1', [email]));
+  if (email && taken.length) throw new Error('This email already has an account');
+  return createAccount('admin', raw);
+}
+
+/** Turn an admin's access off or back on. You cannot turn off your own access or the last active admin. */
+export async function setAdminActive(user: SessionUser, adminId: string, active: boolean) {
+  requireRole(user, 'admin');
+  if (!active && adminId === user.id) throw new Error('You cannot remove your own access');
+  await asUser(user, async (tx) => {
+    if (!active) {
+      const [r] = await tx.query<{ n: number }>(`select count(*)::int as n from profiles where role = 'admin' and active and id <> $1`, [adminId]);
+      if (!r || r.n < 1) throw new Error('At least one admin must keep access');
+    }
+    await tx.query(`update profiles set active = $2 where id = $1 and role = 'admin'`, [adminId, active]);
+  });
+}

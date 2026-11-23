@@ -21,6 +21,13 @@ export function redactPhone(value: string | null | undefined): string {
   return `***${d.slice(-2)}`;
 }
 
+/** Safe for logs: keeps the first letter and the domain. */
+export function redactEmail(value: string | null | undefined): string {
+  if (!value) return '';
+  const [user, domain] = value.split('@');
+  return `${user.slice(0, 1)}***@${domain ?? ''}`;
+}
+
 const PHONE_PATTERN = /\+?\d[\d\s().-]{7,}\d/g;
 
 /** Remove anything that looks like a phone number from free text (log lines, errors). */

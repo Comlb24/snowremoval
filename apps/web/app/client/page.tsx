@@ -44,7 +44,7 @@ export default async function ClientHome() {
         ))}
       </div>
       <p className="mt-6 text-xs text-slate-500">
-        Updates by {client?.notify_channel === 'voice' ? 'automated voice call' : 'SMS'}{client?.opted_out ? ' (turned off)' : ''}. To change this, contact us.
+        Updates by {({ sms: 'SMS', email: 'email', voice: 'automated voice call' } as Record<string, string>)[client?.notify_channel ?? 'sms']}{client?.opted_out ? ' (turned off)' : ''}. To change this, contact us.
       </p>
     </main>
   );

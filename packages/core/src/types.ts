@@ -1,8 +1,9 @@
 export const ROLES = ['admin', 'driver', 'client'] as const;
 export type Role = (typeof ROLES)[number];
 
-export const CHANNELS = ['sms', 'voice'] as const;
+export const CHANNELS = ['sms', 'voice', 'email'] as const;
 export type Channel = (typeof CHANNELS)[number];
+export const CHANNEL_LABELS: Record<Channel, string> = { sms: 'SMS', voice: 'Voice call', email: 'Email' };
 
 export const ROUTE_STATUSES = ['draft', 'published', 'in_progress', 'paused', 'completed', 'cancelled'] as const;
 export type RouteStatus = (typeof ROUTE_STATUSES)[number];

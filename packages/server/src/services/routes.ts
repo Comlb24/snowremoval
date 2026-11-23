@@ -225,10 +225,12 @@ export async function getRouteDetail(user: SessionUser, routeId: string) {
     );
     if (!route) return null;
     const stops = await tx.query<any>(
-      `select s.*, p.address, p.instructions, p.location_source, c.id as client_id, c.name as client_name, c.notify_channel, c.opted_out,
+      `select s.*, p.address, p.instructions, p.equipment, p.location_source, c.id as client_id, c.name as client_name, c.opted_out,
+              (pr.property_id is not null) as to_resident, coalesce(pr.notify_channel, c.notify_channel) as notify_channel,
               v.note, v.block_reason, v.photo_count, v.completed_at, v.blocked_at,
               (select n.status from notifications n where n.route_stop_id = s.id and n.kind <> 'manual' and n.status <> 'cancelled' order by n.created_at desc limit 1) as last_notification_status
          from route_stops s join properties p on p.id = s.property_id join clients c on c.id = p.client_id
+         left join property_residents pr on pr.property_id = p.id
          left join visits v on v.route_stop_id = s.id
         where s.route_id = $1 order by s.position`,
       [routeId],

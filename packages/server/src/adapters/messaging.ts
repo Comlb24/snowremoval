@@ -1,13 +1,15 @@
 import { randomUUID } from 'node:crypto';
-import { redactPhone, type Channel } from '@snow/core';
+import { redactEmail, redactPhone, type Channel } from '@snow/core';
 import { config } from '../env';
 import { log } from '../log';
 
 export interface SendRequest {
   channel: Channel;
   to: string;
-  /** SMS text, or the script read aloud for a voice call. */
+  /** SMS text, the script read aloud for a voice call, or the plain-text email body. */
   body: string;
+  /** Email only. */
+  subject?: string | null;
   notificationId: string;
 }
 
@@ -16,23 +18,24 @@ export type SendResult =
   | { ok: false; error: string; simulated: boolean; retryable: boolean };
 
 export interface Messenger {
-  name: 'simulated' | 'twilio';
+  name: 'simulated' | 'twilio' | 'resend';
   simulated: boolean;
   send(req: SendRequest): Promise<SendResult>;
 }
 
 /**
  * Development messenger: records the message, sends nothing.
- * Numbers ending in 0000 simulate a delivery failure so the "failed" path can be tested.
+ * Numbers ending in 0000, and email addresses starting with "fail", simulate a delivery failure
+ * so the "failed" path can be tested.
  */
 export const simulatedMessenger: Messenger = {
   name: 'simulated',
   simulated: true,
   async send(req) {
-    if (/0000$/.test(req.to)) {
-      return { ok: false, error: 'Simulated failure: number unreachable', simulated: true, retryable: false };
+    if (req.channel === 'email' ? /^fail/i.test(req.to) : /0000$/.test(req.to)) {
+      return { ok: false, error: `Simulated failure: ${req.channel === 'email' ? 'email address' : 'number'} unreachable`, simulated: true, retryable: false };
     }
-    log.info(`SIMULATED ${req.channel} to ${redactPhone(req.to)} (notification ${req.notificationId})`);
+    log.info(`SIMULATED ${req.channel} to ${req.channel === 'email' ? redactEmail(req.to) : redactPhone(req.to)} (notification ${req.notificationId})`);
     return { ok: true, providerRef: `sim_${randomUUID()}`, simulated: true };
   },
 };
@@ -61,6 +64,7 @@ export function twilioMessenger(): Messenger {
         return { ok: false, error: 'Live sending is disabled outside production', simulated: false, retryable: false };
       }
       try {
+        if (req.channel === 'email') return { ok: false, error: 'Email is not sent through Twilio', simulated: false, retryable: false };
         const tc = await client();
         if (req.channel === 'sms') {
           const msg = await tc.messages.create({
@@ -86,14 +90,53 @@ export function twilioMessenger(): Messenger {
   };
 }
 
+/** Email through Resend's HTTP API. Only ever constructed when live email is fully configured in production. */
+export function resendMessenger(): Messenger {
+  const c = config();
+  if (c.appEnv !== 'production' || c.emailMode !== 'live' || !c.email) {
+    throw new Error('Refusing to create the live email sender outside production live mode');
+  }
+  const em = c.email;
+  return {
+    name: 'resend',
+    simulated: false,
+    async send(req) {
+      if (config().appEnv !== 'production' || config().emailMode !== 'live') {
+        return { ok: false, error: 'Live sending is disabled outside production', simulated: false, retryable: false };
+      }
+      if (req.channel !== 'email') return { ok: false, error: 'Only email is sent through Resend', simulated: false, retryable: false };
+      try {
+        const res = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${em.apiKey}`,
+            'Content-Type': 'application/json',
+            // Resend ignores a repeat with the same key, so a retry never sends twice.
+            'Idempotency-Key': req.notificationId,
+          },
+          body: JSON.stringify({ from: em.from, to: [req.to], subject: req.subject || 'Service update', text: req.body, ...(em.replyTo ? { reply_to: em.replyTo } : {}) }),
+          signal: AbortSignal.timeout(15_000),
+        });
+        const data: any = await res.json().catch(() => ({}));
+        if (res.ok && data?.id) return { ok: true, providerRef: String(data.id), simulated: false };
+        return { ok: false, error: `Email error ${res.status}: ${String(data?.message ?? res.statusText)}`.slice(0, 300), simulated: false, retryable: res.status >= 500 || res.status === 429 };
+      } catch (e: any) {
+        return { ok: false, error: `Email error: ${String(e?.message ?? e)}`.slice(0, 300), simulated: false, retryable: true };
+      }
+    },
+  };
+}
+
 let override: Messenger | null = null;
 /** For tests. */
 export function setMessenger(m: Messenger | null) {
   override = m;
 }
 
-export function getMessenger(): Messenger {
+/** The sender for one channel: email goes through the email provider, SMS and calls through Twilio. */
+export function getMessenger(channel: Channel = 'sms'): Messenger {
   if (override) return override;
+  if (channel === 'email') return config().emailMode === 'live' ? resendMessenger() : simulatedMessenger;
   return config().messagingMode === 'live' ? twilioMessenger() : simulatedMessenger;
 }
 

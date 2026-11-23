@@ -20,7 +20,7 @@ export async function GET() {
   } catch (e) {
     return NextResponse.json({ ok: false, stage: 'settings', error: safe((e as Error).message) }, { status: 500 });
   }
-  const info = { env: c.appEnv, messaging: c.messagingMode, routing: c.routingMode, storage: c.storageMode, auth: c.authMode, database: c.databaseUrl ? 'postgres' : 'embedded' };
+  const info = { env: c.appEnv, messaging: c.messagingMode, email: c.emailMode, routing: c.routingMode, storage: c.storageMode, auth: c.authMode, database: c.databaseUrl ? 'postgres' : 'embedded' };
   if (c.databaseUrl) {
     try {
       const u = new URL(c.databaseUrl);

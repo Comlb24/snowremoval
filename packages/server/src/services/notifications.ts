@@ -1,10 +1,10 @@
-import { localDate, addMinutes, manualMessageSchema, NOTIFYING_ROUTE_STATUSES, type ManualMessageInput } from '@snow/core';
+import { localDate, addMinutes, manualEmailSubject, manualMessageSchema, NOTIFYING_ROUTE_STATUSES, type ManualMessageInput } from '@snow/core';
 import { asSystem, asUser, type SessionUser } from '../db';
 import { config } from '../env';
 import { getMessenger } from '../adapters/messaging';
 import { requireRole } from '../auth';
 import { log } from '../log';
-import { recomputeRoute } from './schedule';
+import { contactFor, recomputeRoute, RECIPIENT_COLUMNS } from './schedule';
 
 const MAX_ATTEMPTS = 3;
 const STALE_SENDING_MINUTES = 10;
@@ -60,7 +60,6 @@ export async function sendDueNotifications(now = new Date()) {
     ),
   );
 
-  const messenger = getMessenger();
   let sent = 0;
   let failed = 0;
   let skipped = 0;
@@ -89,7 +88,8 @@ export async function sendDueNotifications(now = new Date()) {
       }
     }
 
-    const res = await messenger.send({ channel: n.channel, to: n.to_address, body: n.body, notificationId: n.id });
+    const messenger = getMessenger(n.channel);
+    const res = await messenger.send({ channel: n.channel, to: n.to_address, body: n.body, subject: n.subject, notificationId: n.id });
     if (res.ok) {
       await asSystem((tx) =>
         tx.query(
@@ -134,18 +134,18 @@ export async function applyProviderStatus(providerRef: string, status: string, e
 export async function sendManualMessage(user: SessionUser, raw: ManualMessageInput) {
   requireRole(user, 'admin');
   const input = manualMessageSchema.parse(raw);
-  const messenger = getMessenger();
   const targets = await asUser(user, (tx) =>
     input.target.type === 'client'
       ? tx.query<any>(
-          `select c.id as client_id, c.notify_channel, c.opted_out, cc.phone, null::uuid as route_id, null::uuid as property_id, null::uuid as stop_id
+          `select c.id as client_id, c.notify_channel, c.opted_out, cc.phone, cc.email, null::uuid as route_id, null::uuid as property_id, null::uuid as stop_id
              from clients c left join client_contacts cc on cc.client_id = c.id where c.id = $1`,
           [input.target.clientId],
         )
       : tx.query<any>(
-          `select c.id as client_id, c.notify_channel, c.opted_out, cc.phone, s.route_id, s.property_id, s.id as stop_id
+          // Route messages are about the property, so they go to the resident when there is one.
+          `select c.id as client_id, c.opted_out, ${RECIPIENT_COLUMNS}, s.route_id, s.property_id, s.id as stop_id
              from route_stops s join properties p on p.id = s.property_id join clients c on c.id = p.client_id
-             left join client_contacts cc on cc.client_id = c.id
+             left join client_contacts cc on cc.client_id = c.id left join property_residents pr on pr.property_id = p.id
             where s.route_id = $1 and s.status <> 'removed'`,
           [input.target.routeId],
         ),
@@ -155,14 +155,16 @@ export async function sendManualMessage(user: SessionUser, raw: ManualMessageInp
   const skipped: string[] = [];
   await asUser(user, async (tx) => {
     for (const t of targets) {
-      if (t.opted_out || !t.phone) {
+      const to = contactFor(t);
+      if (t.opted_out || !to) {
         skipped.push(t.client_id);
         continue;
       }
+      const messenger = getMessenger(t.notify_channel);
       await tx.query(
-        `insert into notifications (client_id, property_id, route_id, route_stop_id, kind, channel, to_address, body, scheduled_at, status, simulated, provider, created_by)
-         values ($1, $2, $3, $4, 'manual', $5, $6, $7, now(), 'scheduled', $8, $9, $10)`,
-        [t.client_id, t.property_id, t.route_id, t.stop_id, t.notify_channel, t.phone, input.body, messenger.simulated, messenger.name, user.id],
+        `insert into notifications (client_id, property_id, route_id, route_stop_id, kind, channel, to_address, body, subject, scheduled_at, status, simulated, provider, created_by)
+         values ($1, $2, $3, $4, 'manual', $5, $6, $7, $8, now(), 'scheduled', $9, $10, $11)`,
+        [t.client_id, t.property_id, t.route_id, t.stop_id, t.notify_channel, to, input.body, t.notify_channel === 'email' ? manualEmailSubject(config().businessName) : null, messenger.simulated, messenger.name, user.id],
       );
       queued++;
     }
@@ -183,7 +185,7 @@ export async function listCommunications(user: SessionUser, f: CommunicationFilt
   requireRole(user, 'admin');
   return asUser(user, (tx) =>
     tx.query<any>(
-      `select n.id, n.kind, n.channel, n.status, n.simulated, n.provider, n.provider_ref, n.body, n.window_start, n.window_end,
+      `select n.id, n.kind, n.channel, n.subject, n.status, n.simulated, n.provider, n.provider_ref, n.body, n.window_start, n.window_end,
               n.scheduled_at, n.sent_at, n.delivered_at, n.failed_at, n.error, n.cancel_reason, n.created_at, n.to_address,
               c.id as client_id, c.name as client_name, p.address, n.route_id, r.service_date::text as service_date
          from notifications n join clients c on c.id = n.client_id

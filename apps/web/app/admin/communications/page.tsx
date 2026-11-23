@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { CHANNEL_LABELS, type Channel } from '@snow/core';
 import { config, listClients, listCommunications, listRoutes } from '@snow/server';
 import { requirePageRole } from '@/lib/session';
 import { btn, Card, Empty, Field, input, Notice, PageHeader, SimTag, Status } from '@/components/ui';
@@ -50,8 +51,8 @@ export default async function CommunicationsPage({ searchParams }: { searchParam
                     <Status status={n.status} />
                     <SimTag simulated={n.simulated} />
                     <Link href={`/admin/clients/${n.client_id}`} className="font-medium hover:underline">{n.client_name}</Link>
-                    <span className="text-slate-500 tabular-nums">{phone(n.to_address)}</span>
-                    <span className="text-slate-500">{n.channel === 'sms' ? 'SMS' : 'Voice call'} · {n.kind === 'manual' ? 'manual message' : n.kind === 'update' ? 'updated window' : 'service window'}</span>
+                    <span className="text-slate-500 tabular-nums">{n.channel === 'email' ? n.to_address : phone(n.to_address)}</span>
+                    <span className="text-slate-500">{CHANNEL_LABELS[n.channel as Channel]} · {n.kind === 'manual' ? 'manual message' : n.kind === 'update' ? 'updated window' : 'service window'}</span>
                   </div>
                   <div className="mt-1 text-xs text-slate-600">
                     {n.status === 'scheduled' ? `Due ${dt(n.scheduled_at)}` : n.sent_at ? `Sent ${dt(n.sent_at)}` : `Was due ${dt(n.scheduled_at)} (not sent)`}
@@ -59,7 +60,8 @@ export default async function CommunicationsPage({ searchParams }: { searchParam
                     {n.service_date && <> · <Link className="underline" href={`/admin/routes/${n.route_id}`}>route {day(n.service_date)}</Link></>}
                     {n.provider_ref && ` · ref ${n.provider_ref.slice(0, 18)}`}
                   </div>
-                  <p className="mt-1 text-slate-800">{n.body}</p>
+                  {n.subject && <p className="mt-1 font-medium text-slate-800">{n.subject}</p>}
+                  <p className="mt-1 whitespace-pre-line text-slate-800">{n.body}</p>
                   {n.error && <p className="mt-1 text-rose-700">✕ {n.error}</p>}
                   {n.cancel_reason && <p className="mt-1 text-xs text-slate-500">Cancelled: {n.cancel_reason}</p>}
                 </li>

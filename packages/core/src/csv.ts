@@ -91,6 +91,7 @@ export function previewImport(text: string): ImportPreview {
     const known = (CHANNELS as readonly string[]).includes(method);
     const notifyChannel: Channel = known ? (method as Channel) : 'sms';
     if (!known) warnings.push('Unknown notify method "' + method + '", using SMS');
+    if (notifyChannel === 'email' && !email) errors.push('Email is needed when notify_method is email');
     const address = get(r, 'address');
     if (address.length < 3) errors.push('Address is missing');
     const latS = get(r, 'latitude');
