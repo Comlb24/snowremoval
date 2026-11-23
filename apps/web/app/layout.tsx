@@ -8,7 +8,8 @@ export const viewport: Viewport = { width: 'device-width', initialScale: 1 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const c = config();
-  const dev = c.messagingMode !== 'live' || c.routingMode === 'mock';
+  // Local development: banner everywhere. Live site: shown to admins only (admin layout), never to clients.
+  const dev = c.appEnv !== 'production' && (c.messagingMode !== 'live' || c.routingMode === 'mock');
   return (
     <html lang="en">
       <body className="min-h-screen antialiased">
