@@ -96,7 +96,14 @@ Notification limits: the SMS template says "today". A route that starts close to
    npm run setup:check
    ```
    Add drivers on the Drivers page and client sign-ins on each client's page (both with a temporary password).
-4. **Scheduler**: call `/api/jobs/scheduler` every minute with the header `Authorization: Bearer <CRON_SECRET>`. Options: Vercel Cron (Pro plan for per-minute jobs), Supabase `pg_cron` + `pg_net`, or any external cron service.
+4. **Scheduler**: a Supabase timer (`pg_cron` + `pg_net`) calls `/api/jobs/scheduler` every minute with `Authorization: Bearer <CRON_SECRET>`. The secret is kept in Supabase Vault. Set it up (or point it at a new address) and check it:
+   ```bash
+   npm run setup:cron -- --url https://your-app.vercel.app
+   ```
+   ```bash
+   npm run setup:cron -- --status
+   ```
+   `CRON_SECRET` must be the same in Vercel and in `apps/web/.env.local`; if you change it, run the setup command again.
 5. **Twilio**: buy a number. Set `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`. Set `MESSAGING_MODE=live` and `APP_ENV=production`. Delivery updates arrive at `/api/webhooks/twilio` (needs an https `PUBLIC_BASE_URL`). Canadian SMS may need number registration with Twilio first.
 6. **Mapbox**: create a token. Set `ROUTING_MODE=mapbox` and `MAPBOX_TOKEN`.
 7. **Mobile**: set `EXPO_PUBLIC_API_URL` to your https address. Build with EAS (`npx eas build`) for the App Store and Google Play.

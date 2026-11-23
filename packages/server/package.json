@@ -12,7 +12,8 @@
     "db:migrate": "tsx src/scripts/migrate.ts",
     "setup:check": "tsx src/scripts/check.ts",
     "user:create": "tsx src/scripts/create-user.ts",
-    "setup:smoke": "tsx src/scripts/smoke.ts"
+    "setup:smoke": "tsx src/scripts/smoke.ts",
+    "setup:cron": "tsx src/scripts/cron.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "0.5.17",

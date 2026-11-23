@@ -14,7 +14,8 @@
     "db:migrate": "npm run db:migrate -w @snow/server",
     "setup:check": "npm run setup:check -w @snow/server",
     "user:create": "npm run user:create -w @snow/server --",
-    "setup:smoke": "npm run setup:smoke -w @snow/server"
+    "setup:smoke": "npm run setup:smoke -w @snow/server",
+    "setup:cron": "npm run setup:cron -w @snow/server --"
   },
   "devDependencies": {
     "typescript": "5.9.3",
