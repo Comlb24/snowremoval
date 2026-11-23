@@ -1,0 +1,17 @@
+{
+  "name": "snow-removal",
+  "private": true,
+  "workspaces": ["packages/*", "apps/*"],
+  "scripts": {
+    "dev": "npm run dev -w @snow/web",
+    "mobile": "npm run start -w @snow/mobile",
+    "test": "npm run test -w @snow/core && npm run test -w @snow/server",
+    "typecheck": "npm run typecheck -w @snow/core && npm run typecheck -w @snow/server && npm run typecheck -w @snow/web",
+    "db:reset": "npm run db:reset -w @snow/server"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vitest": "5.1.1",
+    "@types/node": "^24.0.0"
+  }
+}
