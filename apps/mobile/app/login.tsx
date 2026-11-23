@@ -1,8 +1,8 @@
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ScrollView, Text, TextInput, View } from 'react-native';
+import { Linking, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { api, API_URL } from '../lib/api';
-import { useAuth } from '../lib/auth';
+import { useAuth, WebsiteOnlyError } from '../lib/auth';
 import { Banner, BigButton, Card, colors } from '../components/ui';
 
 interface DevUser { id: string; role: string; name: string }
@@ -14,6 +14,7 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [websiteOnly, setWebsiteOnly] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
 
   useEffect(() => {
@@ -24,12 +25,14 @@ export default function Login() {
 
   const go = async (fn: () => Promise<void>, key: string) => {
     setError('');
+    setWebsiteOnly(false);
     setBusy(key);
     try {
       await fn();
       router.replace('/');
     } catch (e) {
       setError((e as Error).message);
+      setWebsiteOnly(e instanceof WebsiteOnlyError);
     } finally {
       setBusy(null);
     }
@@ -37,7 +40,13 @@ export default function Login() {
 
   return (
     <ScrollView contentContainerStyle={{ padding: 16 }}>
+      <Text style={{ fontSize: 16, color: colors.muted, marginBottom: 12 }}>Drivers and property owners sign in here. Admins use the website.</Text>
       {error ? <Banner tone="danger">{error}</Banner> : null}
+      {websiteOnly ? (
+        <Pressable onPress={() => Linking.openURL(API_URL)} accessibilityRole="link" style={{ marginBottom: 12 }}>
+          <Text style={{ color: colors.primary, fontSize: 17, fontWeight: '600' }}>Open the website ›</Text>
+        </Pressable>
+      ) : null}
       {devMode ? (
         <Card>
           <Text style={{ fontSize: 18, fontWeight: '700', marginBottom: 4 }}>Development sign-in</Text>

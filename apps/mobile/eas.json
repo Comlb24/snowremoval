@@ -1,0 +1,25 @@
+{
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://web-iro-ll.vercel.app"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "ascAppId": "6838508902",
+        "appleTeamId": "DDG88FJ754",
+        "ascApiKeyPath": "/Users/prabhjit/.appstoreconnect/AuthKey_4536PRWCM3.p8",
+        "ascApiKeyId": "4536PRWCM3",
+        "ascApiKeyIssuerId": "8cb8d706-bb49-41b0-870d-a8862899226c"
+      }
+    }
+  }
+}
