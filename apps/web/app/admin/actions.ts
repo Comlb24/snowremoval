@@ -147,11 +147,22 @@ export async function routeCommandAction(f: FormData) {
 export async function createDriverAction(f: FormData) {
   const user = await requirePageRole('admin');
   try {
-    await S.createDriver(user, { fullName: str(f, 'fullName'), email: str(f, 'email') });
+    await S.createDriver(user, { fullName: str(f, 'fullName'), email: str(f, 'email'), password: str(f, 'password') || undefined });
   } catch (e) {
     back('/admin/drivers', e);
   }
   redirect('/admin/drivers?msg=Driver+added');
+}
+
+export async function createClientLoginAction(f: FormData) {
+  const user = await requirePageRole('admin');
+  const clientId = str(f, 'clientId');
+  try {
+    await S.createClientLogin(user, clientId, { fullName: str(f, 'fullName'), email: str(f, 'email'), password: str(f, 'password') || undefined });
+  } catch (e) {
+    back(`/admin/clients/${clientId}`, e);
+  }
+  redirect(`/admin/clients/${clientId}?msg=Client+sign-in+created`);
 }
 
 export async function setDriverActiveAction(f: FormData) {

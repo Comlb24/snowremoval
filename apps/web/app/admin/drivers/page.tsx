@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { listDrivers } from '@snow/server';
+import { config, listDrivers } from '@snow/server';
 import { requirePageRole } from '@/lib/session';
 import { btn, Card, Field, input, Notice, PageHeader, Status, Tag } from '@/components/ui';
 import { dt } from '@/lib/format';
@@ -41,6 +41,11 @@ export default async function DriversPage({ searchParams }: { searchParams: Prom
           <form action={createDriverAction} className="space-y-3">
             <Field label="Full name"><input name="fullName" required className={input} /></Field>
             <Field label="Email" hint="Used to sign in to the mobile app."><input name="email" type="email" required className={input} /></Field>
+            {config().authMode === 'supabase' && (
+              <Field label="Temporary password" hint="8+ characters. Give it to the driver privately; they use it to sign in.">
+                <input name="password" type="text" required minLength={8} autoComplete="off" className={input} />
+              </Field>
+            )}
             <button className={btn()}>Add driver</button>
           </form>
         </Card>

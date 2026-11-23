@@ -8,11 +8,16 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "db:reset": "tsx src/scripts/reset.ts"
+    "db:reset": "tsx src/scripts/reset.ts",
+    "db:migrate": "tsx src/scripts/migrate.ts",
+    "setup:check": "tsx src/scripts/check.ts",
+    "user:create": "tsx src/scripts/create-user.ts",
+    "setup:smoke": "tsx src/scripts/smoke.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "0.5.17",
     "@snow/core": "*",
+    "@supabase/supabase-js": "^2.119.2",
     "jose": "6.2.18",
     "postgres": "4.1.1",
     "twilio": "6.3.1",

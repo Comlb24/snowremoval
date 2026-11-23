@@ -1,13 +1,20 @@
 {
   "name": "snow-removal",
   "private": true,
-  "workspaces": ["packages/*", "apps/*"],
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
     "dev": "npm run dev -w @snow/web",
     "mobile": "npm run start -w @snow/mobile",
     "test": "npm run test -w @snow/core && npm run test -w @snow/server",
     "typecheck": "npm run typecheck -w @snow/core && npm run typecheck -w @snow/server && npm run typecheck -w @snow/web",
-    "db:reset": "npm run db:reset -w @snow/server"
+    "db:reset": "npm run db:reset -w @snow/server",
+    "db:migrate": "npm run db:migrate -w @snow/server",
+    "setup:check": "npm run setup:check -w @snow/server",
+    "user:create": "npm run user:create -w @snow/server --",
+    "setup:smoke": "npm run setup:smoke -w @snow/server"
   },
   "devDependencies": {
     "typescript": "5.9.3",

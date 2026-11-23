@@ -82,11 +82,20 @@ Notification limits: the SMS template says "today". A route that starts close to
 
 ## Going live (needs your accounts)
 
-1. **Supabase** (free plan is fine to start): create a project. Then run the migrations in `supabase/migrations` (Supabase CLI `supabase db push`, or paste them into the SQL editor in order). Do **not** run `supabase/dev/auth-shim.sql` on Supabase.
-2. Copy `docs/env.example` to `apps/web/.env.local`. Fill in `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SESSION_SECRET`, `CRON_SECRET`. Set `AUTH_MODE=supabase` and `STORAGE_MODE=supabase`.
-3. Create the first admin: add a user in Supabase (Authentication > Users), then in the SQL editor run
-   `insert into profiles (id, role, full_name, email) values ('<user id>', 'admin', 'Your Name', 'you@example.com');`
-   Add drivers from the Drivers page. To link a client login, set `clients.user_id` to a profile with role `client`.
+1. **Supabase**: create a project (free plan is fine to start). Create `apps/web/.env.local` from `docs/env.example` and fill in `DATABASE_URL` (Connect > Transaction pooler), `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`, `SESSION_SECRET`, `CRON_SECRET`. Set `AUTH_MODE=supabase` and `STORAGE_MODE=supabase`.
+2. Set up the database (applies `supabase/migrations` once each; never applies the local-only `supabase/dev` shim):
+   ```bash
+   npm run db:migrate
+   ```
+3. Create your admin sign-in. Run it in your own terminal; the temporary password is shown once:
+   ```bash
+   npm run user:create -- --role admin --name "Your Name" --email you@example.com
+   ```
+   Then check everything:
+   ```bash
+   npm run setup:check
+   ```
+   Add drivers on the Drivers page and client sign-ins on each client's page (both with a temporary password).
 4. **Scheduler**: call `/api/jobs/scheduler` every minute with the header `Authorization: Bearer <CRON_SECRET>`. Options: Vercel Cron (Pro plan for per-minute jobs), Supabase `pg_cron` + `pg_net`, or any external cron service.
 5. **Twilio**: buy a number. Set `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`. Set `MESSAGING_MODE=live` and `APP_ENV=production`. Delivery updates arrive at `/api/webhooks/twilio` (needs an https `PUBLIC_BASE_URL`). Canadian SMS may need number registration with Twilio first.
 6. **Mapbox**: create a token. Set `ROUTING_MODE=mapbox` and `MAPBOX_TOKEN`.

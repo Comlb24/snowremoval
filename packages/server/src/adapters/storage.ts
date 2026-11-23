@@ -37,26 +37,22 @@ export function localStorage(dir: string): PhotoStorage {
   };
 }
 
-/** Supabase Storage private bucket, accessed only by the server with the service key. */
-export function supabaseStorage(url: string, serviceKey: string, bucket = 'visit-photos'): PhotoStorage {
-  const headers = { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey };
+/** Supabase Storage private bucket, accessed only by the server with the secret key. */
+export function supabaseStorage(bucket = 'visit-photos'): PhotoStorage {
   return {
     name: 'supabase',
     async put(key, bytes, contentType) {
       checkKey(key);
-      const res = await fetch(`${url}/storage/v1/object/${bucket}/${key}`, {
-        method: 'POST',
-        headers: { ...headers, 'Content-Type': contentType, 'x-upsert': 'true' },
-        body: bytes as unknown as BodyInit,
-      });
-      if (!res.ok) throw new Error(`Photo upload failed (${res.status})`);
+      const { supabaseAdmin } = await import('./supabase');
+      const { error } = await supabaseAdmin().storage.from(bucket).upload(key, bytes, { contentType, upsert: true });
+      if (error) throw new Error(`Photo upload failed: ${error.message}`);
     },
     async get(key) {
       checkKey(key);
-      const res = await fetch(`${url}/storage/v1/object/authenticated/${bucket}/${key}`, { headers });
-      if (res.status === 404 || res.status === 400) return null;
-      if (!res.ok) throw new Error(`Photo download failed (${res.status})`);
-      return { bytes: new Uint8Array(await res.arrayBuffer()), contentType: res.headers.get('content-type') ?? 'image/jpeg' };
+      const { supabaseAdmin } = await import('./supabase');
+      const { data, error } = await supabaseAdmin().storage.from(bucket).download(key);
+      if (error || !data) return null;
+      return { bytes: new Uint8Array(await data.arrayBuffer()), contentType: data.type || 'image/jpeg' };
     },
   };
 }
@@ -64,8 +60,8 @@ export function supabaseStorage(url: string, serviceKey: string, bucket = 'visit
 export function getStorage(): PhotoStorage {
   const c = config();
   if (c.storageMode === 'supabase') {
-    if (!c.supabase?.serviceRoleKey) throw new Error('STORAGE_MODE=supabase needs SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY');
-    return supabaseStorage(c.supabase.url, c.supabase.serviceRoleKey);
+    if (!c.supabase?.secretKey) throw new Error('STORAGE_MODE=supabase needs SUPABASE_URL and SUPABASE_SECRET_KEY');
+    return supabaseStorage();
   }
   return localStorage(c.localStorageDir);
 }

@@ -69,7 +69,7 @@ export async function sendDueNotifications(now = new Date()) {
     if (n.kind !== 'manual') {
       const [ok] = await asSystem((tx) =>
         tx.query<{ ok: boolean }>(
-          `select (r.status = any($2::text[]) and s.status = 'pending' and not c.opted_out and p.active) as ok
+          `select (r.status = any($2::text::text[]) and s.status = 'pending' and not c.opted_out and p.active) as ok
              from route_stops s join routes r on r.id = s.route_id join properties p on p.id = s.property_id join clients c on c.id = p.client_id
             where s.id = $1`,
           [n.route_stop_id, `{${NOTIFYING_ROUTE_STATUSES.join(',')}}`],

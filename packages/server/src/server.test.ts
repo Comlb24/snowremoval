@@ -6,7 +6,7 @@ import {
   createClient, createStatusLink, revokeStatusLinks, statusByToken, importCsv, getClient, clientOverview,
   createDraftRoute, setRouteStatus, reorderStops, getRouteDetail, moveStop,
   myRoutes, driverRoute, revealPhone, recordStopUpdate, addPhoto, startShift, getPhoto,
-  runSchedulerTick, sendManualMessage, getMessenger, twilioMessenger, updateClient,
+  runSchedulerTick, sendManualMessage, getMessenger, twilioMessenger, updateClient, createClientLogin,
   type SessionUser,
 } from './index';
 
@@ -226,6 +226,16 @@ describe('admin data', () => {
     const again = await importCsv(admin, csv);
     expect(again.clientsCreated).toBe(0);
     expect(again.skippedExisting).toBe(2);
+  });
+
+  it('gives a client a sign-in that sees only their own properties', async () => {
+    const clientId = await createClient(admin, { name: 'Login Test', phone: '506-555-0191', notifyChannel: 'sms' }, { address: '9 Login St', lat: 46.1, lng: -64.8, instructions: '', serviceMinutes: 15, active: true });
+    const id = await createClientLogin(admin, clientId, { fullName: 'Login Test', email: 'Login.Test@Example.com' });
+    const me: SessionUser = { id, role: 'client' };
+    const { properties } = await clientOverview(me);
+    expect(properties.map((p: any) => p.address)).toEqual(['9 Login St']);
+    await expect(createClientLogin(admin, clientId, { fullName: 'X', email: 'x2@example.com' })).rejects.toThrow(/already/);
+    await expect(createClientLogin(dana as any, clientId, { fullName: 'X', email: 'x3@example.com' })).rejects.toThrow(/access/);
   });
 
   it('validates client input', async () => {

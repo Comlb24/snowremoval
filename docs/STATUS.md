@@ -30,7 +30,7 @@ Also checked by hand through the API: photo upload retry → stored once; anothe
 
 ## Not verified yet (needs your accounts or a deployment)
 
-- Supabase: migrations on a real project, Supabase Auth sign-in, private storage bucket, driver invite. The code exists but has not run against Supabase.
+- Supabase: now connected and verified on the real project (Nov 23, 2026). Migrations applied; `npm run setup:check` passes; the admin signed in on the web; `npm run setup:smoke` passed 19 checks (clients, routes, reordering, publishing, role isolation, phone reveal, status link, exactly-once stop updates, private photo storage, client view, scheduler) inside a rolled-back transaction. Not yet tried: adding a driver or client sign-in from the web pages, and the mobile app signing in with email and password.
 - Twilio: real SMS, real voice calls, delivery webhooks. Built with the official SDK, never run (no credentials; development can never send).
 - Mapbox: real address lookup and road travel times. Built from the current API docs, never run.
 - Production scheduler cron (the endpoint works; no cron is set up).

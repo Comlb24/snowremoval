@@ -24,7 +24,8 @@ export async function getClient(user: SessionUser, clientId: string) {
   requireRole(user, 'admin');
   return asUser(user, async (tx) => {
     const [client] = await tx.query<any>(
-      `select c.*, cc.phone, cc.email from clients c left join client_contacts cc on cc.client_id = c.id where c.id = $1`,
+      `select c.*, cc.phone, cc.email, lp.email as login_email, lp.active as login_active
+         from clients c left join client_contacts cc on cc.client_id = c.id left join profiles lp on lp.id = c.user_id where c.id = $1`,
       [clientId],
     );
     if (!client) return null;

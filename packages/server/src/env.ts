@@ -24,7 +24,7 @@ export interface ServerConfig {
   localStorageDir: string;
   twilio: { accountSid: string; authToken: string; fromNumber: string; messagingServiceSid?: string } | null;
   mapboxToken: string | null;
-  supabase: { url: string; anonKey: string; serviceRoleKey: string | null } | null;
+  supabase: { url: string; publishableKey: string; secretKey: string | null } | null;
   defaultStart: { address: string; lat: number; lng: number };
 }
 
@@ -67,7 +67,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     localStorageDir: env.LOCAL_STORAGE_DIR ?? path.join(root, '.data', 'photos'),
     twilio,
     mapboxToken: env.MAPBOX_TOKEN ?? null,
-    supabase: env.SUPABASE_URL && env.SUPABASE_ANON_KEY ? { url: env.SUPABASE_URL.replace(/\/$/, ''), anonKey: env.SUPABASE_ANON_KEY, serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY ?? null } : null,
+    // New key names (publishable/secret) preferred; legacy anon/service_role names still accepted.
+    supabase:
+      env.SUPABASE_URL && (env.SUPABASE_PUBLISHABLE_KEY || env.SUPABASE_ANON_KEY)
+        ? {
+            url: env.SUPABASE_URL.replace(/\/$/, ''),
+            publishableKey: (env.SUPABASE_PUBLISHABLE_KEY || env.SUPABASE_ANON_KEY)!,
+            secretKey: env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY || null,
+          }
+        : null,
     defaultStart: {
       address: env.DEFAULT_START_ADDRESS ?? 'Depot, 1 Industrial Dr, Moncton, NB',
       lat: Number(env.DEFAULT_START_LAT ?? 46.1105),

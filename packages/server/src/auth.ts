@@ -67,22 +67,12 @@ export async function devLogin(userId: string): Promise<string> {
   return createSessionToken(userId);
 }
 
-/**
- * Supabase Auth sign-in (email + password) through the GoTrue REST endpoint, then exchange for our session.
- * NOT VERIFIED against a live Supabase project yet.
- */
+/** Supabase Auth sign-in (email + password), then our own session token. */
 export async function supabasePasswordLogin(email: string, password: string): Promise<string> {
-  const sb = config().supabase;
-  if (config().authMode !== 'supabase' || !sb) throw new AuthError('Supabase sign-in is not configured');
-  const res = await fetch(`${sb.url}/auth/v1/token?grant_type=password`, {
-    method: 'POST',
-    headers: { apikey: sb.anonKey, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
-  });
-  if (!res.ok) throw new AuthError('Email or password is not correct');
-  const body: any = await res.json();
-  const userId = body?.user?.id;
-  if (!userId) throw new AuthError('Sign-in failed');
+  if (config().authMode !== 'supabase' || !config().supabase) throw new AuthError('Supabase sign-in is not configured');
+  const { supabaseSignIn } = await import('./adapters/supabase');
+  const userId = await supabaseSignIn(email.trim().toLowerCase(), password);
+  if (!userId) throw new AuthError('Email or password is not correct');
   const rows = await asSystem((tx) => tx.query('select id from profiles where id = $1 and active', [userId]));
   if (!rows.length) throw new ForbiddenError('This account has no access yet. Ask the admin.');
   return createSessionToken(userId);

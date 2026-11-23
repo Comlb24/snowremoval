@@ -6,7 +6,8 @@ import { getRouting } from '../adapters/routing';
 import { recomputeRoute, previewNotifications } from './schedule';
 
 const ids = (v: string[]) => JSON.stringify(v);
-const IN_IDS = (n: number) => `(select (jsonb_array_elements_text($${n}::jsonb))::uuid)`;
+// JSON is sent as text and cast in SQL: postgres.js would otherwise JSON-encode a jsonb parameter a second time.
+const IN_IDS = (n: number) => `(select (jsonb_array_elements_text($${n}::text::jsonb))::uuid)`;
 
 interface Matrix {
   ids: string[];
@@ -62,7 +63,7 @@ export async function createDraftRoute(user: SessionUser, raw: RouteDraftInput) 
   const routeId = await asUser(user, async (tx) => {
     const [r] = await tx.query<{ id: string }>(
       `insert into routes (service_date, driver_id, planned_start, start_address, start_lat, start_lng, travel_matrix, matrix_simulated, created_by, name)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id`,
+       values ($1, $2, $3, $4, $5, $6, $7::text::jsonb, $8, $9, $10) returning id`,
       [input.serviceDate, input.driverId, plannedStart.toISOString(), input.startAddress, input.startLat, input.startLng, JSON.stringify(matrix), simulated, user.id, ''],
     );
     let prev = 0;
@@ -152,7 +153,7 @@ export async function addStops(user: SessionUser, routeId: string, propertyIds: 
   const all = [...data.existing.map((e: any) => ({ id: e.property_id, lat: e.lat, lng: e.lng })), ...newOnes.filter((p: any) => !data.existing.some((e: any) => e.property_id === p.id))];
   const { matrix, simulated } = await buildMatrix({ lat: data.r.start_lat, lng: data.r.start_lng }, all);
   await asUser(user, async (tx) => {
-    await tx.query('update routes set travel_matrix = $2, matrix_simulated = $3, updated_at = now() where id = $1', [routeId, JSON.stringify(matrix), simulated]);
+    await tx.query('update routes set travel_matrix = $2::text::jsonb, matrix_simulated = $3, updated_at = now() where id = $1', [routeId, JSON.stringify(matrix), simulated]);
     for (const p of newOnes) {
       await tx.query(
         `insert into route_stops (route_id, property_id, position, service_minutes) values ($1, $2, 9999, $3)

@@ -101,7 +101,8 @@ export async function seedDemoData(now = new Date()) {
 
 /** Seed once, on first start of an empty local database (development only). */
 export async function ensureDemoData() {
-  if (config().appEnv === 'production') return;
+  // Only the local embedded database ever gets demo data — never a real (Supabase) database.
+  if (config().appEnv === 'production' || config().databaseUrl) return;
   const [row] = await asSystem((tx) => tx.query<{ n: number }>('select count(*)::int as n from profiles'));
   if (row.n === 0) await seedDemoData();
 }

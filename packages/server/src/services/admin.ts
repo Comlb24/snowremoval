@@ -56,32 +56,52 @@ export async function listDrivers(user: SessionUser) {
   );
 }
 
-const newDriver = z.object({ fullName: z.string().trim().min(1).max(120), email: z.email() });
+const accountInput = z.object({
+  fullName: z.string().trim().min(1, 'Enter a name').max(120),
+  email: z.email('Enter a valid email').transform((e) => e.trim().toLowerCase()),
+  // Required with Supabase sign-in; ignored by the development demo sign-in.
+  password: z.string().min(8, 'Temporary password must be at least 8 characters').max(72).optional(),
+});
 
 /**
- * Add a driver. Dev mode: creates a local account. Supabase mode: creates the auth user
- * through the Supabase admin API (needs the service key; NOT VERIFIED against a live project).
+ * Create a sign-in account (auth user + profile). Used for the first admin (setup script),
+ * drivers (Drivers page) and client logins (client page).
+ * Supabase mode: confirmed Supabase Auth user with a temporary password. Dev mode: local account.
  */
-export async function createDriver(user: SessionUser, raw: unknown) {
-  requireRole(user, 'admin');
-  const input = newDriver.parse(raw);
+export async function createAccount(role: 'admin' | 'driver' | 'client', raw: unknown, opts: { clientId?: string } = {}) {
+  const input = accountInput.parse(raw);
   const c = config();
   let id: string;
   if (c.authMode === 'supabase') {
-    if (!c.supabase?.serviceRoleKey) throw new Error('SUPABASE_SERVICE_ROLE_KEY is needed to invite drivers');
-    const res = await fetch(`${c.supabase.url}/auth/v1/admin/users`, {
-      method: 'POST',
-      headers: { apikey: c.supabase.serviceRoleKey, Authorization: `Bearer ${c.supabase.serviceRoleKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: input.email, email_confirm: true, user_metadata: { full_name: input.fullName } }),
-    });
-    if (!res.ok) throw new Error(`Could not create the account (${res.status})`);
-    id = (await res.json()).id;
+    if (!input.password) throw new Error('Set a temporary password (8+ characters) for this account');
+    const { createSupabaseUser } = await import('../adapters/supabase');
+    id = await createSupabaseUser(input.email, input.password, input.fullName);
   } else {
     id = randomUUID();
     await asSystem((tx) => tx.query('insert into auth.users (id, email) values ($1, $2)', [id, input.email]));
   }
-  await asUser(user, (tx) => tx.query(`insert into profiles (id, role, full_name, email) values ($1, 'driver', $2, $3)`, [id, input.fullName, input.email]));
+  await asSystem(async (tx) => {
+    await tx.query('insert into profiles (id, role, full_name, email) values ($1, $2, $3, $4)', [id, role, input.fullName, input.email]);
+    if (opts.clientId) {
+      const rows = await tx.query('update clients set user_id = $2, updated_at = now() where id = $1 and user_id is null returning id', [opts.clientId, id]);
+      if (!rows.length) throw new Error('This client already has a sign-in');
+    }
+  });
   return id;
+}
+
+export async function createDriver(user: SessionUser, raw: unknown) {
+  requireRole(user, 'admin');
+  return createAccount('driver', raw);
+}
+
+/** Give a client a sign-in for the client web page and mobile app. */
+export async function createClientLogin(user: SessionUser, clientId: string, raw: unknown) {
+  requireRole(user, 'admin');
+  const [c] = await asUser(user, (tx) => tx.query<{ user_id: string | null }>('select user_id from clients where id = $1', [clientId]));
+  if (!c) throw new Error('Client not found');
+  if (c.user_id) throw new Error('This client already has a sign-in');
+  return createAccount('client', raw, { clientId });
 }
 
 export async function setDriverActive(user: SessionUser, driverId: string, active: boolean) {

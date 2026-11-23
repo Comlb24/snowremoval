@@ -1,12 +1,12 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { cookies } from 'next/headers';
-import { getClient } from '@snow/server';
+import { config, getClient } from '@snow/server';
 import { requirePageRole } from '@/lib/session';
 import { btn, Card, Field, input, Notice, PageHeader, SimTag, Status, Tag } from '@/components/ui';
 import { day, dt, phone } from '@/lib/format';
 import {
-  createStatusLinkAction, revokeStatusLinkAction, savePropertyAction, sendMessageAction, setPropertyActiveAction, updateClientAction,
+  createClientLoginAction, createStatusLinkAction, revokeStatusLinkAction, savePropertyAction, sendMessageAction, setPropertyActiveAction, updateClientAction,
 } from '../../actions';
 import { CopyLink } from './copy-link';
 
@@ -53,6 +53,23 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
             </label>
             <button className={btn()}>Save</button>
           </form>
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <h3 className="mb-2 text-sm font-semibold text-slate-900">App sign-in</h3>
+            {client.user_id ? (
+              <p className="text-sm text-slate-700">Signed up as {client.login_email}{client.login_active === false ? ' (turned off)' : ''}. They can see their properties on the web and in the app.</p>
+            ) : (
+              <form action={createClientLoginAction} className="space-y-2">
+                <input type="hidden" name="clientId" value={client.id} />
+                <input type="hidden" name="fullName" value={client.name} />
+                <p className="text-xs text-slate-500">Optional. The private status link works without a sign-in.</p>
+                <input name="email" type="email" required placeholder="Sign-in email" defaultValue={client.email ?? ''} className={input} />
+                {config().authMode === 'supabase' && (
+                  <input name="password" type="text" required minLength={8} autoComplete="off" placeholder="Temporary password (8+ characters)" className={input} />
+                )}
+                <button className={btn('secondary', 'sm')}>Create sign-in</button>
+              </form>
+            )}
+          </div>
           {preferences.length > 0 && (
             <details className="mt-4 text-sm">
               <summary className="cursor-pointer text-slate-600">Preference history ({preferences.length})</summary>
