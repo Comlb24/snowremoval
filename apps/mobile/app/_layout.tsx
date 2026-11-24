@@ -20,7 +20,7 @@ export default function RootLayout() {
             }}
           >
             <Stack.Screen name="index" options={{ headerShown: false }} />
-            <Stack.Screen name="login" options={{ title: 'Sign in' }} />
+            <Stack.Screen name="login" options={{ headerShown: false, title: 'Sign in' }} />
             <Stack.Screen name="driver/index" options={{ title: 'My routes', headerBackVisible: false }} />
             <Stack.Screen name="driver/route/[id]" options={{ title: 'Route' }} />
             <Stack.Screen name="driver/stop/[id]" options={{ title: 'Stop' }} />

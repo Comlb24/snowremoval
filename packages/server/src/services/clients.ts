@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { CHANNEL_LABELS, clientInputSchema, paymentInputSchema, propertyInputSchema, previewImport, type ClientInput, type PropertyInput, type PropertyFormInput, type ImportRow } from '@snow/core';
+import { CHANNEL_LABELS, clientInputSchema, localDate, paymentInputSchema, propertyInputSchema, previewImport, type ClientInput, type PropertyInput, type PropertyFormInput, type ImportRow } from '@snow/core';
 import { asSystem, asUser, type SessionUser, type Tx } from '../db';
 import { config } from '../env';
 import { requireRole } from '../auth';
@@ -62,11 +62,27 @@ export async function getClient(user: SessionUser, clientId: string) {
         where l.client_id = $1 order by l.created_at desc limit 50`,
       [clientId],
     );
+    const seasonStart = winterSeasonStart(new Date());
+    const [stats] = await tx.query<any>(
+      `select count(*) filter (where v.status = 'completed')::int as completed_total,
+              count(*) filter (where v.status = 'completed' and r.service_date >= $2)::int as completed_season,
+              count(*) filter (where v.status = 'blocked' and r.service_date >= $2)::int as blocked_season,
+              max(v.completed_at) as last_completed_at
+         from visits v join properties p on p.id = v.property_id join route_stops s on s.id = v.route_stop_id
+         join routes r on r.id = s.route_id where p.client_id = $1`,
+      [clientId, seasonStart],
+    );
     // Only active properties count toward what the client owes.
     const quotedTotal = properties.filter((p: any) => p.active).reduce((t: number, p: any) => t + (p.quoted_amount ?? 0), 0);
     const paidTotal = payments.reduce((t: number, p: any) => t + p.amount, 0);
-    return { client, properties, payments, money: { quotedTotal, paidTotal, balance: Math.round((quotedTotal - paidTotal) * 100) / 100 }, visits, communications, preferences };
+    return { client, properties, payments, money: { quotedTotal, paidTotal, balance: Math.round((quotedTotal - paidTotal) * 100) / 100 }, visits, communications, preferences, stats: { ...stats, seasonStart } };
   });
+}
+
+/** A snow season runs July to June, so November and February count as the same winter. */
+function winterSeasonStart(now: Date) {
+  const [y, m] = localDate(now.toISOString(), config().timeZone).split('-').map(Number);
+  return `${m >= 7 ? y : y - 1}-07-01`;
 }
 
 async function insertClient(tx: Tx, user: SessionUser, c: ClientInput) {

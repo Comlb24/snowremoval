@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { listClients } from '@snow/server';
 import { requirePageRole } from '@/lib/session';
-import { Card, Empty, input, LinkButton, PageHeader, Tag } from '@/components/ui';
+import { btn, Card, Empty, input, LinkButton, PageHeader, Tag } from '@/components/ui';
 import { money, phone } from '@/lib/format';
 import { Balance } from './balance';
 
@@ -38,7 +38,8 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
                   <th className="py-2 pr-4">Properties</th>
                   <th className="py-2 pr-4 text-right">Quoted</th>
                   <th className="py-2 pr-4 text-right">Paid</th>
-                  <th className="py-2 text-right">Balance</th>
+                  <th className="py-2 pr-4 text-right">Balance</th>
+                  <th className="py-2"><span className="sr-only">Profile</span></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -55,7 +56,10 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
                     </td>
                     <td className="py-2 pr-4 text-right tabular-nums">{money(c.quoted_total)}</td>
                     <td className="py-2 pr-4 text-right tabular-nums">{money(c.paid_total)}</td>
-                    <td className="py-2 text-right tabular-nums"><Balance amount={c.quoted_total - c.paid_total} /></td>
+                    <td className="py-2 pr-4 text-right tabular-nums"><Balance amount={c.quoted_total - c.paid_total} /></td>
+                    <td className="py-2 text-right">
+                      <Link href={`/admin/clients/${c.id}`} aria-label={`Open ${c.name}'s profile`} className={btn('secondary', 'sm')}>Profile</Link>
+                    </td>
                   </tr>
                 ))}
               </tbody>
