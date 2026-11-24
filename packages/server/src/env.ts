@@ -27,6 +27,8 @@ export interface ServerConfig {
   localStorageDir: string;
   twilio: { accountSid: string; authToken: string; fromNumber: string; messagingServiceSid?: string } | null;
   mapboxToken: string | null;
+  /** Browser key for Google Places address suggestions. It is sent to the browser, so restrict it to your web addresses in Google Cloud. */
+  googleMapsBrowserKey: string | null;
   supabase: { url: string; publishableKey: string; secretKey: string | null } | null;
   defaultStart: { address: string; lat: number; lng: number };
 }
@@ -72,6 +74,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     localStorageDir: env.LOCAL_STORAGE_DIR ?? path.join(root, '.data', 'photos'),
     twilio,
     mapboxToken: env.MAPBOX_TOKEN ?? null,
+    googleMapsBrowserKey: env.GOOGLE_MAPS_API_KEY || null,
     // New key names (publishable/secret) preferred; legacy anon/service_role names still accepted.
     supabase:
       env.SUPABASE_URL && (env.SUPABASE_PUBLISHABLE_KEY || env.SUPABASE_ANON_KEY)

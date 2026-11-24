@@ -11,8 +11,13 @@ const str = (f: FormData, k: string) => String(f.get(k) ?? '').trim();
 const msg = (e: unknown) => (e instanceof ZodError ? e.issues.map((i) => i.message).join('; ') : e instanceof Error ? e.message : String(e));
 const back = (path: string, e: unknown): never => redirect(`${path}${path.includes('?') ? '&' : '?'}error=${encodeURIComponent(msg(e))}`);
 
-async function locate(user: S.SessionUser, address: string, lat: string, lng: string) {
+async function locate(user: S.SessionUser, address: string, lat: string, lng: string, f?: FormData) {
   if (lat && lng) return { lat: Number(lat), lng: Number(lng), source: 'manual' };
+  // The address was picked from Google's suggestions: use the location that came with it.
+  const pLat = Number(f ? str(f, 'placeLat') : NaN), pLng = Number(f ? str(f, 'placeLng') : NaN);
+  if (f && str(f, 'placeAddress') === address && Number.isFinite(pLat) && Number.isFinite(pLng) && Math.abs(pLat) <= 90 && Math.abs(pLng) <= 180) {
+    return { lat: pLat, lng: pLng, source: 'geocoded' };
+  }
   const g = await S.geocodeAddress(user, address);
   if (!g) throw new Error('Address not found. Enter the latitude and longitude instead.');
   return { lat: g.lat, lng: g.lng, source: g.source };
@@ -76,7 +81,7 @@ export async function savePropertyAction(f: FormData) {
     // A new address with the old coordinates would put the stop in the wrong place: look it up again.
     const moved = unchanged && str(f, 'address').toLowerCase() !== str(f, 'origAddress').toLowerCase();
     if (moved) unchanged = false;
-    const loc = await locate(user, str(f, 'address'), moved ? '' : str(f, 'lat'), moved ? '' : str(f, 'lng'));
+    const loc = await locate(user, str(f, 'address'), moved ? '' : str(f, 'lat'), moved ? '' : str(f, 'lng'), f);
     const data = {
       clientId: str(f, 'clientId'), address: str(f, 'address'), lat: loc.lat, lng: loc.lng,
       instructions: str(f, 'instructions'), serviceMinutes: Number(str(f, 'serviceMinutes') || 15), active: f.get('active') !== 'off',

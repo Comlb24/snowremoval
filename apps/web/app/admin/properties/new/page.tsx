@@ -24,7 +24,7 @@ export default async function NewPropertyPage({ searchParams }: { searchParams: 
         </Card>
       ) : (
         <Card>
-          <PropertyForm clients={clients} clientId={fromClient} returnTo={fromClient ? 'client' : undefined} simulatedLocations={config().routingMode === 'mock'} />
+          <PropertyForm clients={clients} clientId={fromClient} returnTo={fromClient ? 'client' : undefined} simulatedLocations={config().routingMode === 'mock'} addressLookup={{ apiKey: config().googleMapsBrowserKey, bias: config().defaultStart }} />
         </Card>
       )}
     </>

@@ -3,16 +3,19 @@ import { btn, Field, input, Tag } from '@/components/ui';
 import { COMING_SOON } from '@/lib/features';
 import { phone } from '@/lib/format';
 import { savePropertyAction } from '../actions';
+import { AddressInput } from './address-input';
 
 /** Add or edit a property. Used on the Properties tab and from a client's page. */
 export function PropertyForm({
-  clients, property, clientId, returnTo, simulatedLocations,
+  clients, property, clientId, returnTo, simulatedLocations, addressLookup,
 }: {
   clients: { id: string; name: string }[];
   property?: any;
   clientId?: string;
   returnTo?: 'client';
   simulatedLocations: boolean;
+  /** Google address suggestions. With no apiKey the address is a plain text box. */
+  addressLookup: { apiKey: string | null; bias: { lat: number; lng: number } };
 }) {
   const p = property;
   const owner = p?.client_id ?? clientId ?? '';
@@ -33,7 +36,9 @@ export function PropertyForm({
             {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </Field>
-        <Field label="Address"><input name="address" required defaultValue={p?.address ?? ''} placeholder="12 Main St, Moncton, NB" className={input} /></Field>
+        <Field label="Address" hint={addressLookup.apiKey ? 'Start typing, then pick the address from the list.' : undefined}>
+          <AddressInput apiKey={addressLookup.apiKey} bias={addressLookup.bias} defaultValue={p?.address ?? ''} />
+        </Field>
       </div>
 
       <fieldset className="rounded-xl border border-slate-200 bg-slate-50 p-4">

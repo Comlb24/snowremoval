@@ -36,7 +36,7 @@ export default async function PropertyPage({ params, searchParams }: { params: P
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card title="Property details" className="lg:col-span-2">
-          <PropertyForm clients={clients} property={p} simulatedLocations={config().routingMode === 'mock'} />
+          <PropertyForm clients={clients} property={p} simulatedLocations={config().routingMode === 'mock'} addressLookup={{ apiKey: config().googleMapsBrowserKey, bias: config().defaultStart }} />
         </Card>
 
         <div className="space-y-4">
