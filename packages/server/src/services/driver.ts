@@ -30,7 +30,7 @@ export async function myRoutes(user: SessionUser) {
  */
 export async function driverRoute(user: SessionUser, routeId: string) {
   requireRole(user, 'driver');
-  return asUser(user, async (tx) => {
+  const data = await asUser(user, async (tx) => {
     const [route] = await tx.query<any>(
       `select r.id, r.service_date::text as service_date, r.planned_start, r.status, r.start_address, r.start_lat, r.start_lng,
               sh.started_at as shift_started_at, sh.ended_at as shift_ended_at
@@ -49,6 +49,20 @@ export async function driverRoute(user: SessionUser, routeId: string) {
     );
     return { route, stops, fetchedAt: new Date().toISOString() };
   });
+  // When "On my way" was sent for each stop. Drivers cannot read the messages table, so this runs
+  // as the system, after the driver's own query has finished (never nested inside it).
+  if (data?.stops.length) {
+    const sent = await asSystem((sys) =>
+      sys.query<{ route_stop_id: string; at: Date }>(
+        `select route_stop_id, coalesce(sent_at, created_at) as at from notifications
+          where route_stop_id = any($1::uuid[]) and dedupe_key like 'on_my_way:%' and status not in ('cancelled', 'failed')`,
+        [`{${data.stops.map((s: any) => s.id).join(',')}}`],
+      ),
+    );
+    const at = new Map(sent.map((r) => [r.route_stop_id, new Date(r.at).toISOString()]));
+    for (const s of data.stops) s.on_my_way_at = at.get(s.id) ?? null;
+  }
+  return data;
 }
 
 async function routeOfStop(stopId: string) {
@@ -60,7 +74,7 @@ export async function startShift(user: SessionUser, routeId: string) {
   requireRole(user, 'driver');
   await asUser(user, (tx) => tx.query('select app.driver_start_shift($1)', [routeId]));
   // Recalculate estimates only. Starting a shift does not send messages to every client:
-  // messages still go out at each stop's own time (one hour before its window).
+  // automatic messages (when turned on) still go out at each stop's own time (one hour before its window).
   await asSystem((tx) => recomputeRoute(tx, routeId));
 }
 

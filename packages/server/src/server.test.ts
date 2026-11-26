@@ -6,7 +6,7 @@ import {
   createClient, createStatusLink, revokeStatusLinks, statusByToken, importCsv, getClient, clientOverview,
   createDraftRoute, setRouteStatus, reorderStops, getRouteDetail, moveStop,
   myRoutes, driverRoute, revealPhone, recordStopUpdate, addPhoto, startShift, getPhoto,
-  runSchedulerTick, sendManualMessage, getMessenger, twilioMessenger, updateClient, createClientLogin,
+  runSchedulerTick, sendManualMessage, sendOnMyWay, getMessenger, twilioMessenger, updateClient, createClientLogin,
   createAdmin, listAdmins, setAdminActive, verifySession, createSessionToken,
   resendMessenger, updateProperty, getProperty, listProperties, recordPayment, deletePayment, setPropertyActive, createProperty,
   type SessionUser,
@@ -21,7 +21,7 @@ let todayRoute = '';
 const count = async (sql: string, p: unknown[] = []) => (await asSystem((tx) => tx.query<{ n: number }>(sql, p)))[0].n;
 
 beforeAll(async () => {
-  setConfig(loadConfig({ APP_ENV: 'test', LOCAL_STORAGE_DIR: `/tmp/snow-test-photos-${process.pid}` } as any));
+  setConfig(loadConfig({ APP_ENV: 'test', AUTO_MESSAGES: 'on', LOCAL_STORAGE_DIR: `/tmp/snow-test-photos-${process.pid}` } as any));
   await useMemoryDb();
   ({ todayRoute } = await seedDemoData());
 }, 60_000);
@@ -161,6 +161,59 @@ describe('notifications', () => {
     const scheduledForOptedOut = await count(`select count(*)::int as n from notifications where client_id = $1 and status = 'scheduled'`, [c!.client.id]);
     expect(scheduledForOptedOut).toBe(0);
     await updateClient(admin, c!.client.id, { name: c!.client.name, phone: c!.client.phone, notifyChannel: 'sms', optedOut: false });
+  });
+});
+
+describe('driver "On my way" message', () => {
+  it('texts the client once, only for the assigned driver, and skips opted-out clients', async () => {
+    const r = await driverRoute(dana, todayRoute);
+    const stop = r!.stops.find((s: any) => s.status === 'pending')!;
+    expect(stop.on_my_way_at).toBeNull();
+    await expect(sendOnMyWay(sam, stop.id)).rejects.toThrow();
+
+    const first = await sendOnMyWay(dana, stop.id);
+    expect(first.result).toBe('sent');
+    const again = await sendOnMyWay(dana, stop.id);
+    expect(again).toEqual({ result: 'already_sent', at: (first as any).at });
+    const rows = await asSystem((tx) => tx.query<any>(`select * from notifications where dedupe_key = $1`, [`on_my_way:${stop.id}`]));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe('sent');
+    expect(rows[0].simulated).toBe(true);
+    expect(rows[0].body).toMatch(/on the way to .+ now\. .*Reply STOP to opt out\.$/);
+    expect((await driverRoute(dana, todayRoute))!.stops.find((s: any) => s.id === stop.id).on_my_way_at).toBe((first as any).at);
+
+    const other = r!.stops.find((s: any) => s.status === 'pending' && s.id !== stop.id)!;
+    const d = await getRouteDetail(admin, todayRoute);
+    const c = await getClient(admin, d!.stops.find((s: any) => s.id === other.id)!.client_id);
+    await updateClient(admin, c!.client.id, { name: c!.client.name, phone: c!.client.phone, notifyChannel: 'sms', optedOut: true });
+    expect(await sendOnMyWay(dana, other.id)).toEqual({ result: 'opted_out' });
+    await updateClient(admin, c!.client.id, { name: c!.client.name, phone: c!.client.phone, notifyChannel: 'sms', optedOut: false });
+  });
+});
+
+describe('automatic messages turned off (the default)', () => {
+  it('schedules none, cancels waiting ones, and still sends "On my way"', async () => {
+    const on = loadConfig({ APP_ENV: 'test', AUTO_MESSAGES: 'on', LOCAL_STORAGE_DIR: `/tmp/snow-test-photos-${process.pid}` } as any);
+    expect(loadConfig({ APP_ENV: 'test' } as any).autoMessages).toBe(false);
+    await runSchedulerTick();
+    const waiting = () => count(`select count(*)::int as n from notifications where route_id = $1 and kind <> 'manual' and status = 'scheduled'`, [todayRoute]);
+    const waitingBefore = await waiting();
+    expect(waitingBefore).toBeGreaterThan(0);
+    try {
+      setConfig({ ...on, autoMessages: false });
+      await runSchedulerTick();
+      expect(await waiting()).toBe(0);
+      const cancelledOff = await count(`select count(*)::int as n from notifications where route_id = $1 and cancel_reason = 'Automatic messages are turned off'`, [todayRoute]);
+      const before = await count(`select count(*)::int as n from notifications where kind <> 'manual'`);
+      await runSchedulerTick();
+      expect(await count(`select count(*)::int as n from notifications where kind <> 'manual'`)).toBe(before);
+      expect(cancelledOff).toBe(waitingBefore);
+      const r = await driverRoute(dana, todayRoute);
+      const stop = r!.stops.find((s: any) => s.status === 'pending' && !s.on_my_way_at)!;
+      expect((await sendOnMyWay(dana, stop.id)).result).toBe('sent');
+    } finally {
+      setConfig(on);
+    }
   });
 });
 

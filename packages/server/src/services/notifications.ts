@@ -1,4 +1,5 @@
-import { localDate, addMinutes, manualEmailSubject, manualMessageSchema, NOTIFYING_ROUTE_STATUSES, type ManualMessageInput } from '@snow/core';
+import { localDate, addMinutes, manualEmailSubject, manualMessageSchema, NOTIFYING_ROUTE_STATUSES, onMyWayMessage, type ManualMessageInput } from '@snow/core';
+import { z } from 'zod';
 import { asSystem, asUser, type SessionUser } from '../db';
 import { config } from '../env';
 import { getMessenger } from '../adapters/messaging';
@@ -65,6 +66,11 @@ export async function sendDueNotifications(now = new Date()) {
   let skipped = 0;
   for (const n of claimed) {
     // Last check right before sending: the world may have changed since the row was scheduled.
+    if (n.kind !== 'manual' && !config().autoMessages) {
+      await asSystem((tx) => tx.query(`update notifications set status = 'cancelled', cancel_reason = 'Automatic messages are turned off', updated_at = now() where id = $1`, [n.id]));
+      skipped++;
+      continue;
+    }
     if (n.kind !== 'manual') {
       const [ok] = await asSystem((tx) =>
         tx.query<{ ok: boolean }>(
@@ -173,6 +179,66 @@ export async function sendManualMessage(user: SessionUser, raw: ManualMessageInp
   return { queued, skippedOptedOut: skipped.length, ...result };
 }
 
+/** Dedupe key for a stop's "On my way" message: one per stop, so a double tap never texts twice. */
+export const onMyWayKey = (stopId: string) => `on_my_way:${stopId}`;
+
+export type OnMyWayResult =
+  | { result: 'sent' | 'already_sent'; at: string }
+  | { result: 'failed'; error: string }
+  | { result: 'opted_out' | 'no_contact' };
+
+/** Driver: tell the client (or the property's resident) that the driver is on the way. Sent at once, once per stop. */
+export async function sendOnMyWay(user: SessionUser, rawStopId: string): Promise<OnMyWayResult> {
+  requireRole(user, 'driver');
+  const stopId = z.uuid().parse(rawStopId);
+  // Permission check: raises unless the stop is on this driver's active route.
+  const [stop] = await asUser(user, (tx) => tx.query<{ status: string }>('select status from app.assert_driver_stop($1)', [stopId]));
+  if (['completed', 'blocked', 'removed'].includes(stop.status)) throw new Error('This stop is already finished');
+
+  const existing = async () => {
+    const [n] = await asSystem((tx) =>
+      tx.query<{ status: string; at: Date; error: string | null }>(
+        `select status, coalesce(sent_at, created_at) as at, error from notifications where dedupe_key = $1 and status <> 'cancelled' order by created_at desc limit 1`,
+        [onMyWayKey(stopId)],
+      ),
+    );
+    return n;
+  };
+  const prev = await existing();
+  if (prev) return { result: 'already_sent', at: new Date(prev.at).toISOString() };
+
+  const [t] = await asSystem((tx) =>
+    tx.query<any>(
+      `select c.id as client_id, c.opted_out, p.address, s.route_id, s.property_id, ${RECIPIENT_COLUMNS}
+         from route_stops s join properties p on p.id = s.property_id join clients c on c.id = p.client_id
+         left join client_contacts cc on cc.client_id = c.id left join property_residents pr on pr.property_id = p.id
+        where s.id = $1`,
+      [stopId],
+    ),
+  );
+  if (t.opted_out) return { result: 'opted_out' };
+  const to = contactFor(t);
+  if (!to) return { result: 'no_contact' };
+
+  const msg = onMyWayMessage({ name: t.recipient_name, address: t.address, businessName: config().businessName }, t.notify_channel);
+  const messenger = getMessenger(t.notify_channel);
+  const inserted = await asSystem((tx) =>
+    tx.query<{ id: string }>(
+      `insert into notifications (client_id, property_id, route_id, route_stop_id, kind, channel, to_address, body, subject, scheduled_at, status, simulated, provider, dedupe_key, created_by)
+       values ($1, $2, $3, $4, 'manual', $5, $6, $7, $8, now(), 'scheduled', $9, $10, $11, $12)
+       on conflict (dedupe_key) where dedupe_key is not null and status <> 'cancelled' do nothing
+       returning id`,
+      [t.client_id, t.property_id, t.route_id, stopId, t.notify_channel, to, msg.body, msg.subject, messenger.simulated, messenger.name, onMyWayKey(stopId), user.id],
+    ),
+  );
+  if (inserted.length) await sendDueNotifications(new Date());
+  const now = await existing();
+  if (!now) return { result: 'failed', error: 'The message was not sent' };
+  if (!inserted.length) return { result: 'already_sent', at: new Date(now.at).toISOString() };
+  if (now.status === 'failed') return { result: 'failed', error: now.error ?? 'The message could not be sent' };
+  return { result: 'sent', at: new Date(now.at).toISOString() };
+}
+
 export interface CommunicationFilter {
   status?: string;
   routeId?: string;
@@ -186,7 +252,7 @@ export async function listCommunications(user: SessionUser, f: CommunicationFilt
   return asUser(user, (tx) =>
     tx.query<any>(
       `select n.id, n.kind, n.channel, n.subject, n.status, n.simulated, n.provider, n.provider_ref, n.body, n.window_start, n.window_end,
-              n.scheduled_at, n.sent_at, n.delivered_at, n.failed_at, n.error, n.cancel_reason, n.created_at, n.to_address,
+              n.scheduled_at, n.sent_at, n.delivered_at, n.failed_at, n.error, n.cancel_reason, n.created_at, n.to_address, n.dedupe_key,
               c.id as client_id, c.name as client_name, p.address, n.route_id, r.service_date::text as service_date
          from notifications n join clients c on c.id = n.client_id
          left join properties p on p.id = n.property_id left join routes r on r.id = n.route_id

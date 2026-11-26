@@ -52,7 +52,7 @@ export default async function CommunicationsPage({ searchParams }: { searchParam
                     <SimTag simulated={n.simulated} />
                     <Link href={`/admin/clients/${n.client_id}`} className="font-medium hover:underline">{n.client_name}</Link>
                     <span className="text-slate-500 tabular-nums">{n.channel === 'email' ? n.to_address : phone(n.to_address)}</span>
-                    <span className="text-slate-500">{CHANNEL_LABELS[n.channel as Channel]} · {n.kind === 'manual' ? 'manual message' : n.kind === 'update' ? 'updated window' : 'service window'}</span>
+                    <span className="text-slate-500">{CHANNEL_LABELS[n.channel as Channel]} · {n.dedupe_key?.startsWith('on_my_way:') ? 'driver on the way' : n.kind === 'manual' ? 'manual message' : n.kind === 'update' ? 'updated window' : 'service window'}</span>
                   </div>
                   <div className="mt-1 text-xs text-slate-600">
                     {n.status === 'scheduled' ? `Due ${dt(n.scheduled_at)}` : n.sent_at ? `Sent ${dt(n.sent_at)}` : `Was due ${dt(n.scheduled_at)} (not sent)`}

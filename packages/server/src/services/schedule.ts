@@ -133,7 +133,10 @@ export async function recomputeRoute(tx: Tx, routeId: string, now = new Date()) 
   const { route, stops } = data;
   const est = estimatesFor(route, stops, now);
   const existing = await loadExisting(tx, routeId);
-  const plan = planNotifications({ routeStatus: route.status, stops: plannerStops(stops, est), existing, now });
+  const auto = config().autoMessages;
+  const plan = auto
+    ? planNotifications({ routeStatus: route.status, stops: plannerStops(stops, est), existing, now })
+    : { create: [], suppressed: [], cancel: existing.filter((n) => n.status === 'scheduled').map((n) => ({ id: n.id, reason: 'Automatic messages are turned off' })) };
 
   for (const c of plan.cancel) {
     await tx.query(`update notifications set status = 'cancelled', cancel_reason = $2, updated_at = now() where id = $1 and status = 'scheduled'`, [c.id, c.reason]);
@@ -179,7 +182,7 @@ export async function previewNotifications(tx: Tx, routeId: string, now = new Da
   const live = route.status === 'draft' ? { ...route, status: 'published' as RouteStatus } : route;
   const est = estimatesFor(live, stops, now);
   const existing = await loadExisting(tx, routeId);
-  const plan = planNotifications({ routeStatus: live.status, stops: plannerStops(stops, est), existing, now });
+  const plan = config().autoMessages ? planNotifications({ routeStatus: live.status, stops: plannerStops(stops, est), existing, now }) : { create: [] as PlannedNotification[] };
   const byStop = new Map<string, PlannedNotification>(plan.create.map((p) => [p.stopId, p]));
   return stops.map((s, i) => ({
     stopId: s.id,

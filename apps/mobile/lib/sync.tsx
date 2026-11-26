@@ -26,6 +26,8 @@ export interface DriverStop {
   block_reason: string | null;
   photo_count: number;
   service_minutes: number;
+  /** When the client was told the driver is on the way. Missing in routes cached by older app versions. */
+  on_my_way_at?: string | null;
 }
 export interface DriverRoute {
   route: { id: string; service_date: string; planned_start: string; status: string; start_address: string; shift_started_at: string | null; shift_ended_at: string | null };

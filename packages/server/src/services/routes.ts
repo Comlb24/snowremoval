@@ -237,7 +237,7 @@ export async function getRouteDetail(user: SessionUser, routeId: string) {
     );
     const notifications = await tx.query<any>(
       `select n.id, n.kind, n.channel, n.status, n.simulated, n.scheduled_at, n.sent_at, n.window_start, n.window_end, n.error, n.cancel_reason,
-              n.route_stop_id, c.name as client_name
+              n.route_stop_id, n.dedupe_key, c.name as client_name
          from notifications n join clients c on c.id = n.client_id where n.route_id = $1 order by n.scheduled_at`,
       [routeId],
     );

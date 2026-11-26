@@ -20,6 +20,11 @@ export interface ServerConfig {
   pgliteDir: string | null;
   authMode: 'dev' | 'supabase';
   messagingMode: 'simulated' | 'live';
+  /**
+   * Automatic texts (service window one hour before, updated window). Off unless AUTO_MESSAGES=on.
+   * When off, clients get only the driver's "On my way" message and messages an admin sends by hand.
+   */
+  autoMessages: boolean;
   emailMode: 'simulated' | 'live';
   email: { apiKey: string; from: string; replyTo: string | null } | null;
   routingMode: 'mock' | 'mapbox';
@@ -67,6 +72,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     pgliteDir: env.DATABASE_URL ? null : (env.PGLITE_DIR ?? path.join(root, '.data', 'pglite')),
     authMode: env.AUTH_MODE === 'supabase' ? 'supabase' : 'dev',
     messagingMode: appEnv === 'production' && wantsLive && twilio ? 'live' : 'simulated',
+    autoMessages: env.AUTO_MESSAGES === 'on',
     emailMode: appEnv === 'production' && wantsLive && env.RESEND_API_KEY && env.EMAIL_FROM ? 'live' : 'simulated',
     email: env.RESEND_API_KEY && env.EMAIL_FROM ? { apiKey: env.RESEND_API_KEY, from: env.EMAIL_FROM, replyTo: env.EMAIL_REPLY_TO || null } : null,
     routingMode: env.ROUTING_MODE === 'mapbox' && env.MAPBOX_TOKEN ? 'mapbox' : 'mock',

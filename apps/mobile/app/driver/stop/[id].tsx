@@ -30,6 +30,9 @@ export default function StopScreen() {
   const [phone, setPhone] = useState<string | null>(null);
   const [phoneMsg, setPhoneMsg] = useState('');
   const [revealing, setRevealing] = useState(false);
+  const [onMyWayAt, setOnMyWayAt] = useState<string | null>(null);
+  const [onMyWayMsg, setOnMyWayMsg] = useState<{ tone: 'warning' | 'danger'; text: string } | null>(null);
+  const [sendingOnMyWay, setSendingOnMyWay] = useState(false);
 
   const load = useCallback(async () => {
     const r = await loadRoute(routeId);
@@ -62,6 +65,30 @@ export default function StopScreen() {
       setRevealing(false);
     }
   };
+
+  const sentAt = onMyWayAt ?? stop.on_my_way_at ?? null;
+
+  const sendOnMyWay = async () => {
+    setSendingOnMyWay(true);
+    setOnMyWayMsg(null);
+    try {
+      const r = await api<{ result: string; at?: string; error?: string }>(`/api/driver/stops/${id}/on-my-way`, { method: 'POST' });
+      if ((r.result === 'sent' || r.result === 'already_sent') && r.at) setOnMyWayAt(r.at);
+      else if (r.result === 'opted_out') setOnMyWayMsg({ tone: 'warning', text: 'Not sent: this client asked not to get messages.' });
+      else if (r.result === 'no_contact') setOnMyWayMsg({ tone: 'warning', text: 'Not sent: no phone number or email on file.' });
+      else setOnMyWayMsg({ tone: 'danger', text: `Not sent: ${r.error ?? 'please try again.'}` });
+    } catch (e) {
+      setOnMyWayMsg({ tone: 'warning', text: isNetworkError(e) ? 'Needs a connection to send the message. Try again in a moment.' : (e as Error).message });
+    } finally {
+      setSendingOnMyWay(false);
+    }
+  };
+
+  const confirmOnMyWay = () =>
+    Alert.alert('Send "On my way"?', `${stop.client_name} gets a message that you are coming to ${stop.address}.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Send', onPress: () => void sendOnMyWay() },
+    ]);
 
   const setStatus = async (status: DriverStop['status'], blockReason?: string) => {
     await updateStop(id, routeId, status, { note: note.trim() || undefined, blockReason });
@@ -99,6 +126,16 @@ export default function StopScreen() {
           {closed ? `Done at ${time(stop.finished_at)}` : `Est. arrival ${time(stop.est_arrival)} · client window ${windowText(stop.window_start, stop.window_end)}`}
         </Text>
         <BigButton title="Navigate" sub="Opens your maps app" onPress={() => openNavigation(stop)} style={{ marginTop: 14 }} />
+        {!closed && editable && (
+          <View style={{ marginTop: 10 }}>
+            {sentAt ? (
+              <Banner tone="success">✓ Client told you are on the way · {time(sentAt)}</Banner>
+            ) : (
+              <BigButton title="On my way" variant="secondary" sub="Texts the client that you are coming" loading={sendingOnMyWay} onPress={confirmOnMyWay} />
+            )}
+            {onMyWayMsg ? <View style={{ marginTop: 8 }}><Banner tone={onMyWayMsg.tone}>{onMyWayMsg.text}</Banner></View> : null}
+          </View>
+        )}
       </Card>
 
       <Card>

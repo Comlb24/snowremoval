@@ -36,6 +36,7 @@ export default async function RoutePage({ params, searchParams }: { params: Prom
   for (const n of notifications) if (n.route_stop_id) notifByStop.set(n.route_stop_id, [...(notifByStop.get(n.route_stop_id) ?? []), n]);
   const previewByStop = new Map((preview ?? []).map((p: any) => [p.stopId, p]));
   const lateCount = (preview ?? []).filter((p: any) => p.planned?.immediate).length;
+  const auto = config().autoMessages;
 
   return (
     <>
@@ -46,7 +47,7 @@ export default async function RoutePage({ params, searchParams }: { params: Prom
           <>
             <Status status={route.status} />
             {route.status === 'draft' && <Cmd routeId={id} cmd="publish" variant="primary">Publish to driver</Cmd>}
-            {['published', 'in_progress'].includes(route.status) && <Cmd routeId={id} cmd="pause">Pause messages</Cmd>}
+            {['published', 'in_progress'].includes(route.status) && <Cmd routeId={id} cmd="pause">{auto ? 'Pause messages' : 'Pause'}</Cmd>}
             {route.status === 'paused' && <Cmd routeId={id} cmd="resume" variant="primary">Resume</Cmd>}
             {editable && <Cmd routeId={id} cmd="cancel" variant="danger">Cancel route</Cmd>}
           </>
@@ -54,11 +55,11 @@ export default async function RoutePage({ params, searchParams }: { params: Prom
       />
       {sp.msg && <div className="mb-4"><Notice tone="success">{sp.msg}</Notice></div>}
       {sp.error && <div className="mb-4"><Notice tone="danger">{sp.error}</Notice></div>}
-      {route.status === 'paused' && <div className="mb-4"><Notice tone="warning">This route is paused. No automatic messages are sent until you resume it.</Notice></div>}
+      {route.status === 'paused' && <div className="mb-4"><Notice tone="warning">This route is paused.{auto ? ' No automatic messages are sent until you resume it.' : ''}</Notice></div>}
       {route.status === 'draft' && (
         <div className="mb-4">
           <Notice tone="info">
-            Draft — the driver cannot see it and no messages are scheduled. Check the order and the message schedule below, then publish.
+            {auto ? 'Draft — the driver cannot see it and no messages are scheduled. Check the order and the message schedule below, then publish.' : 'Draft — the driver cannot see it. Check the order below, then publish.'}
             {lateCount > 0 && <strong> {lateCount} client(s) would be messaged immediately because their normal message time has passed.</strong>}
           </Notice>
         </div>
@@ -77,7 +78,7 @@ export default async function RoutePage({ params, searchParams }: { params: Prom
         actions={editable && active.some((s: any) => s.status === 'pending') ? <Cmd routeId={id} cmd="resuggest">Re-suggest order</Cmd> : null}
         className="mb-4"
       >
-        <p className="mb-3 text-xs text-slate-500">Arrival = planned start + driving time + service time at earlier stops. Windows are two hours, centred on the estimate. Clients get a message one hour before their window. All times are estimates.</p>
+        <p className="mb-3 text-xs text-slate-500">Arrival = planned start + driving time + service time at earlier stops. Windows are two hours, centred on the estimate. {auto ? 'Clients get a message one hour before their window.' : 'Clients get a message only when the driver taps “On my way”.'} All times are estimates.</p>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead className="text-xs uppercase text-slate-500">
@@ -103,7 +104,7 @@ export default async function RoutePage({ params, searchParams }: { params: Prom
                     <td className="py-2 pr-3 text-xs">
                       {s.opted_out ? <Tag tone="danger">Opted out</Tag>
                         : route.status === 'draft' ? (pv?.planned ? (pv.planned.immediate ? <Tag tone="warning">Immediately on publish</Tag> : <>At {t(pv.planned.scheduledAt)}</>) : '—')
-                        : last ? <><Status status={last.status} /> {last.status === 'scheduled' ? t(last.scheduled_at) : t(last.sent_at)} {last.kind === 'update' && <Tag>update</Tag>}</> : '—'}
+                        : last ? <><Status status={last.status} /> {last.status === 'scheduled' ? t(last.scheduled_at) : t(last.sent_at)} {last.kind === 'update' && <Tag>update</Tag>}{last.dedupe_key?.startsWith('on_my_way:') && <Tag>on my way</Tag>}</> : '—'}
                     </td>
                     <td className="py-2 whitespace-nowrap">
                       {editable && s.status === 'pending' && (
@@ -165,7 +166,7 @@ export default async function RoutePage({ params, searchParams }: { params: Prom
             </form>
           )}
           {notifications.length === 0 ? (
-            <p className="text-sm text-slate-500">{route.status === 'draft' ? 'Messages are scheduled when you publish.' : 'None yet.'}</p>
+            <p className="text-sm text-slate-500">{route.status === 'draft' && auto ? 'Messages are scheduled when you publish.' : 'None yet.'}</p>
           ) : (
             <ul className="max-h-96 divide-y divide-slate-100 overflow-auto text-sm">
               {[...notifications].reverse().map((n: any) => (
@@ -174,7 +175,7 @@ export default async function RoutePage({ params, searchParams }: { params: Prom
                     <Status status={n.status} />
                     <SimTag simulated={n.simulated} />
                     <span>{n.client_name}</span>
-                    <span className="text-slate-500">{n.kind} · {CHANNEL_LABELS[n.channel as Channel]} · {n.status === 'scheduled' ? `due ${dt(n.scheduled_at)}` : dt(n.sent_at ?? n.scheduled_at)}</span>
+                    <span className="text-slate-500">{n.dedupe_key?.startsWith('on_my_way:') ? 'on my way' : n.kind} · {CHANNEL_LABELS[n.channel as Channel]} · {n.status === 'scheduled' ? `due ${dt(n.scheduled_at)}` : dt(n.sent_at ?? n.scheduled_at)}</span>
                   </div>
                   {n.window_start && <div className="text-xs text-slate-600">Window {win(n.window_start, n.window_end)}</div>}
                   {n.error && <div className="text-xs text-rose-700">{n.error}</div>}
